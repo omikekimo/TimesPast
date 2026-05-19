@@ -1,0 +1,83 @@
+{
+  "name": "HistoricalEvent",
+  "type": "object",
+  "properties": {
+    "title": {
+      "type": "string",
+      "description": "Name of the historical event"
+    },
+    "description": {
+      "type": "string",
+      "description": "Detailed description of the event"
+    },
+    "date": {
+      "type": "string",
+      "format": "date",
+      "description": "Date when the event occurred"
+    },
+    "year": {
+      "type": "integer",
+      "description": "Year of the event for easier filtering"
+    },
+    "latitude": {
+      "type": "number",
+      "description": "Latitude coordinate"
+    },
+    "longitude": {
+      "type": "number",
+      "description": "Longitude coordinate"
+    },
+    "category": {
+      "type": "string",
+      "enum": [
+        "war",
+        "politics",
+        "culture",
+        "science",
+        "natural_disaster",
+        "economics",
+        "religion",
+        "exploration",
+        "person"
+      ],
+      "description": "Category of historical event"
+    },
+    "significance": {
+      "type": "string",
+      "enum": [
+        "local",
+        "regional",
+        "national",
+        "global"
+      ],
+      "description": "Geographic scope of impact"
+    },
+    "wikipedia_url": {
+      "type": "string",
+      "description": "Link to Wikipedia article (verified to exist)"
+    },
+    "source": {
+      "type": "string",
+      "description": "Data source"
+    },
+    "search_group": {
+      "type": "string",
+      "description": "ID of the search batch that created this pin \u2014 used to group and connect related pins"
+    },
+    "search_color": {
+      "type": "string",
+      "description": "Hex colour assigned to the search batch that created this pin"
+    },
+    "search_query": {
+      "type": "string",
+      "description": "The original user search term that spawned this pin \u2014 used for Wikipedia lookups"
+    }
+  },
+  "required": [
+    "title",
+    "year",
+    "latitude",
+    "longitude",
+    "category"
+  ]
+}

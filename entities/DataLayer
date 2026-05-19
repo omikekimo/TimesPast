@@ -1,0 +1,48 @@
+{
+  "name": "DataLayer",
+  "type": "object",
+  "properties": {
+    "name": {
+      "type": "string",
+      "description": "Name of the data layer"
+    },
+    "type": {
+      "type": "string",
+      "enum": [
+        "weather",
+        "species",
+        "population",
+        "temperature",
+        "precipitation",
+        "geological"
+      ],
+      "description": "Type of data layer"
+    },
+    "data_url": {
+      "type": "string",
+      "description": "URL to the data file"
+    },
+    "year": {
+      "type": "integer",
+      "description": "Year the data represents"
+    },
+    "description": {
+      "type": "string",
+      "description": "Description of what this layer shows"
+    },
+    "visualization_config": {
+      "type": "object",
+      "description": "Configuration for how to visualize this data"
+    },
+    "is_active": {
+      "type": "boolean",
+      "default": false,
+      "description": "Whether this layer is currently active"
+    }
+  },
+  "required": [
+    "name",
+    "type",
+    "year"
+  ]
+}
