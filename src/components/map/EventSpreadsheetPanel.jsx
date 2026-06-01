@@ -3,11 +3,13 @@ import React, { useState, useRef } from "react";
 import { Download, Upload, Search, ChevronUp, ChevronDown, Pencil, Check, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { formatPinDate } from "@/lib/dateUtils";
+import { dateToCsvString, dateToCsvTimeString } from "@/lib/dateUtils";
 
 
 const HUMAN_COLUMNS = [
   { key: "title",       label: "Title" },
-  { key: "date", label: "Date", format: d => d ? formatPinDate(d) : "" },
+  { key: "date", label: "Date", format: d => d ? dateToCsvString(d) : "" },
+  { key: "dateTime", label: "Time" },
   { key: "category",    label: "Category",    format: v => v ? v.charAt(0).toUpperCase() + v.slice(1).replace("_", " ") : "" },
   { key: "significance",label: "Significance",format: v => v ? v.charAt(0).toUpperCase() + v.slice(1) : "" },
   { key: "description", label: "Description" },
@@ -32,12 +34,14 @@ function toCSVValue(v) {
 function eventsToCSV(events) {
   const header = HUMAN_COLUMNS.map(c => c.label).join(",");
   const rows = events.map(e =>
-    HUMAN_COLUMNS.map(c => {
-      const raw = e[c.key];
-      const display = c.format ? c.format(raw) : raw;
-      return toCSVValue(display ?? "");
-    }).join(",")
-  );
+  HUMAN_COLUMNS.map(c => {
+    if (c.key === "date") return toCSVValue(dateToCsvString(e.date) ?? "");
+    if (c.key === "dateTime") return toCSVValue(dateToCsvTimeString(e.date) ?? "");
+    const raw = e[c.key];
+    const display = c.format ? c.format(raw) : (raw ?? "");
+    return toCSVValue(display ?? "");
+  }).join(",")
+);
   return [header, ...rows].join("\n");
 }
 
@@ -189,10 +193,10 @@ export default function EventSpreadsheetPanel({ events, onImportEvents, onEditEv
           {editable ? "Editing ON" : "Edit"}
         </button>
         <Button variant="outline" size="sm" onClick={handleExportCSV} className="h-7 text-xs gap-1 px-2">
-          <Download className="w-3.5 h-3.5" /> Export
+          <Upload className="w-3.5 h-3.5" /> Export
         </Button>
         <Button variant="outline" size="sm" onClick={() => fileRef.current?.click()} className="h-7 text-xs gap-1 px-2">
-          <Upload className="w-3.5 h-3.5" /> Import
+          <Download className="w-3.5 h-3.5" /> Import
         </Button>
         <input ref={fileRef} type="file" accept=".csv" onChange={handleImportCSV} className="hidden" />
       </div>

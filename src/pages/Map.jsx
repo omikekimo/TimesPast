@@ -510,6 +510,9 @@ function MapPageInner() {
   };
 
   const handleImportData = () => {
+    const parsedDate = (r.date && r.date.trim())
+  ? csvStringToDate(r.date, r.dateTime || "")
+  : null;
     const input = document.createElement('input');
     input.type = 'file';
     input.accept = '.json';
@@ -736,10 +739,16 @@ function MapPageInner() {
   const groupColor = r.search_color || fallbackColor;
   const groupName  = r.search_query || fallbackName;
 
-  const parsedDate = r.date ? csvStringToDate(r.date) : null;
-  const year = parsedDate
-    ? datePartToYear(parsedDate.start)
-    : (parseInt(r.year, 10) || 0);
+
+
+const parsedDate = r.date ? csvStringToDate(r.date) : null;
+const year = parsedDate
+  ? datePartToYear(parsedDate.start)
+  : (parseInt(r.year, 10) || 0);
+
+    if (groupId && !newGroups[groupId]) {
+  newGroups[groupId] = { id: groupId, name: groupName, color: groupColor };
+}
 
   return {
     id:           `${groupId}_imported_${i}`,

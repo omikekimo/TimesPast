@@ -152,7 +152,7 @@ export default function SidebarSessionControls({
               size="sm"
               className="flex-1 h-8 text-xs dark:border-gray-600 dark:text-gray-300"
             >
-              <Download className="w-3 h-3 mr-1" />
+              <Upload className="w-3 h-3 mr-1" />
               Export
             </Button>
             <Button
@@ -161,7 +161,7 @@ export default function SidebarSessionControls({
               size="sm"
               className="flex-1 h-8 text-xs dark:border-gray-600 dark:text-gray-300"
             >
-              <Upload className="w-3 h-3 mr-1" />
+              <Download className="w-3 h-3 mr-1" />
               Import
             </Button>
           </div>

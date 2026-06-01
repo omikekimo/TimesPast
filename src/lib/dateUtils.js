@@ -125,33 +125,84 @@ export function parseSparqlDate(isoString) {
 }
 
 // ── CSV serialise / deserialise ──────────────────────────────────────────────
-// Stored as a single column: "1066-10-14|day|false" or "44||true" (BCE year only)
+// Format: DD/MM/YYYY, MM/YYYY, or YYYY (BCE stored as negative: -44)
 export function dateToCsvString(date) {
-  if (!date) return "";
+  if (!date?.start) return "";
   const s = date.start;
-  if (!s) return "";
-  const parts = [
-    s.year, s.month, s.day, s.hour, s.minute,
-    s.bce ? "1" : "0",
-    s.precision
-  ].join("|");
-  const e = date.end;
-  if (!e || !e.year) return parts;
-  const eParts = [
-    e.year, e.month, e.day, e.hour, e.minute,
-    e.bce ? "1" : "0",
-    e.precision
-  ].join("|");
-  return `${parts}~${eParts}`;
+  const y = s.bce ? -Math.abs(parseInt(s.year, 10)) : Math.abs(parseInt(s.year, 10));
+  if (!y && y !== 0) return "";
+
+  switch (s.precision) {
+    case PRECISION.DAY:
+    case PRECISION.TIME:
+      if (s.day && s.month) return `${String(s.day).padStart(2,'0')}/${String(s.month).padStart(2,'0')}/${y}`;
+      if (s.month)           return `${String(s.month).padStart(2,'0')}/${y}`;
+      return `${y}`;
+    case PRECISION.MONTH:
+      if (s.month) return `${String(s.month).padStart(2,'0')}/${y}`;
+      return `${y}`;
+    default:
+      return `${y}`;
+  }
 }
 
-export function csvStringToDate(str) {
-  if (!str) return null;
-  const [startStr, endStr] = str.split("~");
-  return {
-    start: parseCsvPart(startStr),
-    end:   endStr ? parseCsvPart(endStr) : null,
-  };
+export function dateToCsvTimeString(date) {
+  if (!date?.start) return "";
+  const s = date.start;
+  if (s.precision !== PRECISION.TIME) return "";
+  if (s.hour === "" || s.hour == null) return "";
+  return `${String(s.hour).padStart(2,'0')}:${String(s.minute ?? 0).padStart(2,'0')}`;
+}
+
+export function csvStringToDate(dateStr, timeStr = "") {
+  if (!dateStr || !dateStr.trim()) return null;
+  const str = dateStr.trim();
+
+  let year, month, day, bce;
+
+  // Try DD/MM/YYYY
+  const full = str.match(/^(\d{1,2})\/(\d{1,2})\/(-?\d{1,6})$/);
+  if (full) {
+    day   = parseInt(full[1], 10);
+    month = parseInt(full[2], 10);
+    year  = parseInt(full[3], 10);
+    bce   = year < 0;
+    year  = Math.abs(year);
+    const part = {
+      year, month, day,
+      hour: "", minute: "",
+      bce,
+      precision: PRECISION.DAY
+    };
+    // Add time if present
+    if (timeStr && timeStr.trim()) {
+      const tp = timeStr.trim().match(/^(\d{1,2}):(\d{2})$/);
+      if (tp) {
+        part.hour     = parseInt(tp[1], 10);
+        part.minute   = parseInt(tp[2], 10);
+        part.precision = PRECISION.TIME;
+      }
+    }
+    return { start: part, end: null };
+  }
+
+  // Try MM/YYYY
+  const monthYear = str.match(/^(\d{1,2})\/(-?\d{1,6})$/);
+  if (monthYear) {
+    month = parseInt(monthYear[1], 10);
+    year  = parseInt(monthYear[2], 10);
+    bce   = year < 0;
+    year  = Math.abs(year);
+    return { start: { year, month, day: "", hour: "", minute: "", bce, precision: PRECISION.MONTH }, end: null };
+  }
+
+  // Plain year
+  const y = parseInt(str, 10);
+  if (!isNaN(y)) {
+    return { start: { year: Math.abs(y), month: "", day: "", hour: "", minute: "", bce: y < 0, precision: PRECISION.YEAR }, end: null };
+  }
+
+  return null;
 }
 
 function parseCsvPart(str) {
