@@ -1,18 +1,17 @@
 Times Past: Historical Analysis Engine
 
-<<<<<<< HEAD
-Prepare the app for first use by navigating to the main root folder of the app and running `npm install`.
 
-then run `npm run dev` from that folder to start the app. use the localhost url provided in the terminal to access the app in your browser.
+--------------------------------------
 
+Instructions for use:
 
-=======
 install node.js
->>>>>>> 5d9d6f8934f124b04a2ae812a2dd53ac68dfda8c
 
 Prepare the app for first use by navigating to the main root folder of the app and running `npm install`.
 
 then run `npm run dev` from that folder to start the app. Use the localhost url provided in the terminal to access the app in your browser.
+
+--------------------------------------
 
 Times Past is an app which allows you to find and store data with a geo-spatial and temporal control set which allows you to scroll through time and watch events unfold on a map. Currently it can search Wikidata for data and create pins on the map which appear in their correct location and a timeline scroll feature allows you to narrow down the range of time you are seeing pins for.  Grouped pins are joined on the map by lines and are navigable chronologically providing you with the when and where.  Most importantly you can add custom pins which contain data you want to be included. 
 
