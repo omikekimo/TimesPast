@@ -5,6 +5,8 @@ import SparqlSearchPanel from '../layers/SparqlSearchPanel';
 import CustomQueryPanel from '../layers/CustomQueryPanel';
 import EventSearchPanel from '../map/SearchPanel';
 import LayerSwitcher from '../layers/LayerSwitcher';
+import AboutPanel from "../ui/AboutPanel";
+import SessionPanel from "../session/SessionPanel";
 
 // Section separator
 function DrawerSection({ title, children }) {
@@ -39,6 +41,7 @@ export default function MobileDrawer({
   onCategoryChange,
   // Console / About toggles
   onToggleConsole,
+  onToggleSession,
   onToggleAbout,
 }) {
   return (
@@ -57,7 +60,7 @@ export default function MobileDrawer({
           {/* Drawer panel */}
           <motion.div
             className="fixed top-0 left-0 bottom-0 z-[810] bg-white shadow-2xl overflow-y-auto"
-            style={{ width: '85vw', maxWidth: 360 }}
+            style={{ width: '100vw', maxWidth: 420 }}
             initial={{ x: '-100%' }}
             animate={{ x: 0 }}
             exit={{ x: '-100%' }}
@@ -111,25 +114,25 @@ export default function MobileDrawer({
               </DrawerSection>
             )}
 
-            {/* Utility buttons */}
-            <DrawerSection title="Tools">
-              <div className="space-y-2">
-                <button
-                  onClick={() => { onToggleConsole(); onClose(); }}
-                  className="flex items-center gap-3 w-full px-3 py-2 rounded-lg hover:bg-gray-100 text-sm text-gray-700"
-                >
-                  <Terminal className="w-4 h-4 text-gray-500" />
-                  {activeLayers.includes('console') ? 'Hide Console' : 'Show Console'}
-                </button>
-                <button
-                  onClick={() => { onToggleAbout(); onClose(); }}
-                  className="flex items-center gap-3 w-full px-3 py-2 rounded-lg hover:bg-gray-100 text-sm text-gray-700"
-                >
-                  <Info className="w-4 h-4 text-gray-500" />
-                  About TimesPast
-                </button>
-              </div>
-            </DrawerSection>
+             {/* sesson controls */}
+            {activeLayers.includes('session') && (
+              <DrawerSection title="Session">
+                <SessionPanel
+
+                />
+              </DrawerSection>
+            )}
+
+             {/* about */}
+            {activeLayers.includes('about') && (
+              <DrawerSection title="about">
+                <AboutPanel
+                    //onToggleAbout={onToggleAbout}
+                />
+              </DrawerSection>
+            )}
+
+
           </motion.div>
         </>
       )}

@@ -24,6 +24,7 @@ import DraggablePanel from "../components/ui/DraggablePanel";
 import ConsolePanel from "../components/console/ConsolePanel";
 import AboutPanel from "../components/ui/AboutPanel";
 import MobileLayout from '../components/mobile/MobileLayout';
+import SessionPanel from '../components/session/SessionPanel';
 
 // Fix for default markers in react-leaflet
 delete L.Icon.Default.prototype._getIconUrl;
@@ -589,6 +590,12 @@ function MapPageInner() {
           <DraggablePanel initialPosition={{ x: 24, y: 300 }} dragHandleClassName="drag-handle">
             <CustomQueryPanel onSearch={handleCustomQuery} isSearching={isSearching} />
           </DraggablePanel>
+        )}
+
+        {activeLayers.includes('session') && (
+        <DraggablePanel initialPosition={{ x: window.innerWidth - 420, y: 24 }} dragHandleClassName="drag-handle">
+          <SessionPanel {...sessionControlHandlers} />
+        </DraggablePanel>
         )}
 
         <DraggablePanel

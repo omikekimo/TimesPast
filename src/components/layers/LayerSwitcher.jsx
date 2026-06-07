@@ -1,15 +1,17 @@
 import React from 'react';
 import { Switch } from "@/components/ui/switch";
-import { Users, Calendar, Map, Cloud, Grab, Search, Terminal, Info } from "lucide-react";
+import { Users, Calendar, Map, Cloud, Grab, Search, Terminal, Info, FolderOpen } from "lucide-react";
 
 const layers = [
   { id: 'people',        label: 'People',          icon: Users,    color: 'bg-amber-100 text-amber-800' },
   { id: 'events',        label: 'Events',         icon: Calendar, color: 'bg-blue-100 text-blue-800' },
 
+
   { id: 'customQueries', label: 'Custom Queries',  icon: Search,   color: 'bg-violet-100 text-violet-800' },
   { id: 'weather',        label: 'Weather',         icon: Cloud,     color: 'bg-cyan-100 text-cyan-800',    disabled: true },
   { id: 'places',         label: 'Places',          icon: Map,       color: 'bg-green-100 text-green-800',  disabled: true },
   { id: 'console',        label: 'Console',         icon: Terminal,  color: 'bg-gray-700 text-green-300' },
+  { id: 'session', label: 'Session', icon: FolderOpen, color: 'bg-emerald-100 text-emerald-800' },
   { id: 'about',        label: 'About',         icon: Info,  color: 'bg-gray-700 text-green-300' },
 ];
 

@@ -14,6 +14,9 @@ import AddPinForm from '../map/AddPinForm';
 import ConsolePanel from '../console/ConsolePanel';
 import AboutPanel from '../ui/AboutPanel';
 import { formatPinDate, migrateLegacyPin } from '@/lib/dateUtils';
+import { ZoomControl } from 'react-leaflet';
+import MobileTopSheet from './MobileTopSheet';
+import SessionPanel from '../session/SessionPanel';
 
 // ── Leaflet helpers (same as desktop) ───────────────────────────────────────
 delete L.Icon.Default.prototype._getIconUrl;
@@ -109,6 +112,7 @@ export default function MobileLayout({
 
   const toggleConsole = () => toggleLayer('console');
   const toggleAbout   = () => toggleLayer('about');
+  const toggleSession = () => toggleLayer('session');
 
   const positions = spreadStackedMarkers(filteredEvents);
 
@@ -121,6 +125,7 @@ export default function MobileLayout({
       {/* ── Full-screen map ── */}
       <MapContainer
         center={[20, 0]} zoom={2}
+        zoomControl={false}
         style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', cursor: pickingLocation.active ? 'crosshair' : '' }}
         className="z-0"
       >
@@ -129,6 +134,7 @@ export default function MobileLayout({
           picking={pickingLocation.active}
           onPick={latlng => setPickingLocation({ active: false, lat: latlng.lat, lng: latlng.lng })}
         />
+        <ZoomControl position="bottomright" />
         <TileLayer
           url="https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png"
           attribution='&copy; <a href="https://carto.com/">CARTO</a>'
@@ -233,6 +239,7 @@ export default function MobileLayout({
         onCategoryChange={setSelectedCategories}
         onToggleConsole={toggleConsole}
         onToggleAbout={toggleAbout}
+        onToggleSession={toggleSession}
       />
 
       {/* ── Timeline sheet ── */}
@@ -319,29 +326,20 @@ export default function MobileLayout({
         />
       </MobileBottomSheet>
 
-      {/* ── Console — rendered as a bottom sheet on mobile ── */}
+      {/* ── Console — rendered as a top sheet on mobile ── */}
       {activeLayers.includes('console') && (
-        <MobileBottomSheet
-          open={true}
-          onClose={() => toggleLayer('console')}
-          size={SHEET_SIZES.HALF}
-          title="Console"
-        >
-          <ConsolePanel />
-        </MobileBottomSheet>
+        <MobileTopSheet
+  open={activeLayers.includes('console')}
+  onClose={() => toggleLayer('console')}
+  title="TimesPast Console"
+  heightPct={0.55}
+>
+  <ConsolePanel />
+</MobileTopSheet>
       )}
 
-      {/* ── About sheet ── */}
-      {activeLayers.includes('about') && (
-        <MobileBottomSheet
-          open={true}
-          onClose={() => toggleLayer('about')}
-          size={SHEET_SIZES.HALF}
-          title="About"
-        >
-          <AboutPanel />
-        </MobileBottomSheet>
-      )}
+
+
     </div>
   );
 }
