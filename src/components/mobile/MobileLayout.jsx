@@ -14,66 +14,20 @@ import AddPinForm from '../map/AddPinForm';
 import ConsolePanel from '../console/ConsolePanel';
 import AboutPanel from '../ui/AboutPanel';
 import { formatPinDate, migrateLegacyPin } from '@/lib/dateUtils';
+import { fixLeafletIcons, createCustomIcon, spreadStackedMarkers, MapResizer, MapClickHandler } from '@/lib/mapUtils';
 import { ZoomControl } from 'react-leaflet';
 import MobileTopSheet from './MobileTopSheet';
 import SessionPanel from '../session/SessionPanel';
 
 // ── Leaflet helpers (same as desktop) ───────────────────────────────────────
-delete L.Icon.Default.prototype._getIconUrl;
-L.Icon.Default.mergeOptions({
-  iconRetinaUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-icon-2x.png',
-  iconUrl:       'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-icon.png',
-  shadowUrl:     'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-shadow.png',
-});
+fixLeafletIcons();
 
-const categoryColors = {
-  war: "#dc2626", politics: "#7c3aed", culture: "#059669",
-  science: "#2563eb", natural_disaster: "#ea580c", economics: "#ca8a04",
-  religion: "#9333ea", exploration: "#0891b2", person: "#f59e0b"
-};
 
-const createCustomIcon = (category, significance, isHovered = false, overrideColor = null) => {
-  const color    = overrideColor || categoryColors[category] || "#6b7280";
-  const baseSize = significance === "global" ? 30 : significance === "national" ? 25 : 20;
-  const size     = isHovered ? Math.round(baseSize * 1.6) : baseSize;
-  const label    = category === 'person' ? 'P' : category.charAt(0).toUpperCase();
-  return L.divIcon({
-    className: 'custom-marker',
-    html: `<div style="width:${size}px;height:${size}px;background:${color};border:3px solid white;border-radius:50%;box-shadow:0 4px 8px rgba(0,0,0,0.3);display:flex;align-items:center;justify-content:center;font-size:10px;color:white;font-weight:bold;">${label}</div>`,
-    iconSize: [size, size],
-    iconAnchor: [size/2, size/2],
-  });
-};
 
-function MapResizer() {
-  const map = useMap();
-  React.useEffect(() => { setTimeout(() => map.invalidateSize(), 200); }, [map]);
-  return null;
-}
 
-function MapClickHandler({ picking, onPick }) {
-  useMapEvents({ click(e) { if (picking) onPick({ lat: e.latlng.lat, lng: e.latlng.lng }); } });
-  return null;
-}
 
-function spreadStackedMarkers(events) {
-  const RADIUS = 0.003;
-  const key    = e => `${e.latitude.toFixed(4)},${e.longitude.toFixed(4)}`;
-  const groups = {};
-  events.forEach(e => { const k = key(e); if (!groups[k]) groups[k] = []; groups[k].push(e); });
-  const result = {};
-  Object.values(groups).forEach(group => {
-    if (group.length === 1) {
-      result[group[0].id] = { lat: group[0].latitude, lng: group[0].longitude };
-    } else {
-      group.forEach((e, i) => {
-        const angle = (2 * Math.PI * i) / group.length - Math.PI / 2;
-        result[e.id] = { lat: e.latitude + RADIUS * Math.cos(angle), lng: e.longitude + RADIUS * Math.sin(angle) };
-      });
-    }
-  });
-  return result;
-}
+
+
 
 // ── Mobile sheet tabs ────────────────────────────────────────────────────────
 const SHEETS = { NONE: null, TIMELINE: 'timeline', ADD_PIN: 'addpin', EVENT: 'event', COMPARE: 'compare', CONSOLE: 'console', ABOUT: 'about' };

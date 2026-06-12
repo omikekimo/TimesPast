@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Search, Loader2, Grab, ChevronDown, ChevronUp } from "lucide-react";
 import { motion } from "framer-motion";
 
+
 // ── Property definitions ────────────────────────────────────────────────────
 // Each category has an id, label, and list of { pid, label } properties.
 // Mirrors the original PHP/Node checkbox + select structure.
@@ -179,6 +180,8 @@ export default function CustomQueryPanel({ onSearch, isSearching }) {
   const [showSparql, setShowSparql] = useState(false);
   const [lastQuery, setLastQuery] = useState("");
 
+  const [resolvedQid, setResolvedQid] = useState(null);
+
   const toggleCategory = (id) => {
     setActiveCategories(prev =>
       prev.includes(id) ? prev.filter(c => c !== id) : [...prev, id]
@@ -296,7 +299,7 @@ export default function CustomQueryPanel({ onSearch, isSearching }) {
             </button>
             {showSparql && (
               <pre className="mt-2 text-[10px] bg-gray-50 rounded p-2 overflow-x-auto text-gray-600 leading-relaxed">
-                {buildSparqlPreview("Q?")}
+                {buildSparqlPreview(resolvedQid || "Q-id resolved at search time")}
               </pre>
             )}
           </div>

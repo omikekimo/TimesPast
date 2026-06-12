@@ -41,7 +41,7 @@ export default function MobileTopSheet({ open, onClose, title, children, heightP
             </div>
 
             {/* Content */}
-            <div className="flex-1 overflow-hidden">
+            <div className="flex-1 overflow-hidden flex flex-col min-h-0">
               {children}
             </div>
 

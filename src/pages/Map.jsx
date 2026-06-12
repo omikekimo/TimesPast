@@ -8,6 +8,7 @@ import { MapPageContext } from "../components/context/MapPageContext";
 import { LayoutContext } from "../components/context/LayoutContext";
 import { nextGroupColor } from "../lib/searchGroups";
 import { parseSparqlDate, datePartToYear, formatPinDate, migrateLegacyPin, csvStringToDate } from "@/lib/dateUtils";
+import { fixLeafletIcons, createCustomIcon, spreadStackedMarkers, MapResizer, MapClickHandler, CATEGORY_COLORS } from '@/lib/mapUtils';
 import { ConsoleProvider, useConsole } from "../components/console/ConsoleContext";
 import { useIsMobile } from '../hooks/use-mobile';
 
@@ -25,72 +26,20 @@ import ConsolePanel from "../components/console/ConsolePanel";
 import AboutPanel from "../components/ui/AboutPanel";
 import MobileLayout from '../components/mobile/MobileLayout';
 import SessionPanel from '../components/session/SessionPanel';
+import { resolveTextToEntities, fetchEntityProperties, resolveBinding, resolvedToPin, resolveWikipediaUrl } from '@/lib/wikidataUtils';
+
 
 // Fix for default markers in react-leaflet
-delete L.Icon.Default.prototype._getIconUrl;
-L.Icon.Default.mergeOptions({
-  iconRetinaUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-icon-2x.png',
-  iconUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-icon.png',
-  shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-shadow.png',
-});
+fixLeafletIcons();
 
-const categoryColors = {
-  war: "#dc2626", politics: "#7c3aed", culture: "#059669",
-  science: "#2563eb", natural_disaster: "#ea580c", economics: "#ca8a04",
-  religion: "#9333ea", exploration: "#0891b2", person: "#f59e0b"
-};
 
-const createCustomIcon = (category, significance, isHovered = false, overrideColor = null) => {
-  const color = overrideColor || categoryColors[category] || "#6b7280";
-  const baseSize = significance === "global" ? 30 : significance === "national" ? 25 : 20;
-  const size = isHovered ? Math.round(baseSize * 1.6) : baseSize;
-  const label = category === 'person' ? 'P' : category.charAt(0).toUpperCase();
-  return L.divIcon({
-    className: 'custom-marker',
-    html: `<div style="width:${size}px;height:${size}px;background:${color};border:3px solid white;border-radius:50%;box-shadow:0 4px 8px rgba(0,0,0,0.3);display:flex;align-items:center;justify-content:center;font-size:10px;color:white;font-weight:bold;">${label}</div>`,
-    iconSize: [size, size],
-    iconAnchor: [size/2, size/2]
-  });
-};
 
-function MapResizer() {
-  const map = useMap();
-  useEffect(() => { setTimeout(() => map.invalidateSize(), 200); }, [map]);
-  return null;
-}
 
-function spreadStackedMarkers(events) {
-  const RADIUS = 0.003;
-  const key = (e) => `${e.latitude.toFixed(4)},${e.longitude.toFixed(4)}`;
-  const groups = {};
-  events.forEach(e => {
-    const k = key(e);
-    if (!groups[k]) groups[k] = [];
-    groups[k].push(e);
-  });
-  const result = {};
-  Object.values(groups).forEach(group => {
-    if (group.length === 1) {
-      result[group[0].id] = { lat: group[0].latitude, lng: group[0].longitude };
-    } else {
-      group.forEach((e, i) => {
-        const angle = (2 * Math.PI * i) / group.length - Math.PI / 2;
-        result[e.id] = {
-          lat: e.latitude + RADIUS * Math.cos(angle),
-          lng: e.longitude + RADIUS * Math.sin(angle),
-        };
-      });
-    }
-  });
-  return result;
-}
 
-function MapClickHandler({ picking, onPick }) {
-  useMapEvents({
-    click(e) { if (picking) onPick({ lat: e.latlng.lat, lng: e.latlng.lng }); }
-  });
-  return null;
-}
+
+
+
+
 
 function promptGroupName(defaultName = "") {
   return window.prompt("Group name:", defaultName);
@@ -169,79 +118,102 @@ function MapPageInner() {
   };
 
   const handleCustomQuery = async (searchText, activeCategories, selectedPids) => {
-    setIsSearching(true);
-    const groupId = `custom_${Date.now()}`;
-    const groupColor = nextGroupColor();
-    try {
-      const searchUrl = `https://www.wikidata.org/w/api.php?action=wbsearchentities&search=${encodeURIComponent(searchText)}&language=en&limit=1&format=json&origin=*`;
-      const searchResp = await fetch(searchUrl);
-      const searchData = await searchResp.json();
-      const qId = searchData.search?.[0]?.id;
-      if (!qId) { con.warn(`Could not find "${searchText}" on Wikidata.`); setIsSearching(false); return; }
-      const entityLabel = searchData.search[0].label || searchText;
+  setIsSearching(true);
+  const groupId    = `custom_${Date.now()}`;
+  const groupColor = nextGroupColor();
 
-      const CATEGORY_DEFS = [
-        { id: "generic", sparqlVar: "generic" }, { id: "person", sparqlVar: "person" },
-        { id: "place", sparqlVar: "place" },     { id: "event", sparqlVar: "event" },
-        { id: "works", sparqlVar: "works" },     { id: "organisation", sparqlVar: "organisation" },
-      ];
-      const active = CATEGORY_DEFS.filter(c => activeCategories.includes(c.id));
-      const selectVars = active.map(c => `?${c.sparqlVar} ?${c.sparqlVar}Label ?${c.sparqlVar}Coords`).join(" ");
-      const triples = active.map(c => `
-        OPTIONAL {
-          wd:${qId} wdt:${selectedPids[c.id]} ?${c.sparqlVar} .
-          OPTIONAL { ?${c.sparqlVar} wdt:P625 ?${c.sparqlVar}Coords . }
-        }`).join("");
-      const sparql = `SELECT ${selectVars} WHERE { ${triples} SERVICE wikibase:label { bd:serviceParam wikibase:language "[AUTO_LANGUAGE],en". } } LIMIT 20`;
-
-      const endpoint = `https://query.wikidata.org/sparql?query=${encodeURIComponent(sparql)}&format=json`;
-      const resp = await fetch(endpoint, { headers: { Accept: "application/sparql-results+json" } });
-      if (!resp.ok) throw new Error("Wikidata SPARQL error");
-      const data = await resp.json();
-      const rows = data.results.bindings;
-
-      const newEvents = [];
-      rows.forEach((row, i) => {
-        active.forEach(cat => {
-          const val = row[cat.sparqlVar];
-          const coords = row[`${cat.sparqlVar}Coords`];
-          const label = row[`${cat.sparqlVar}Label`];
-          if (!val) return;
-          let latitude = 0, longitude = 0;
-          if (coords?.value) {
-            const parts = coords.value.replace("Point(", "").replace(")", "").split(" ");
-            longitude = parseFloat(parts[0]); latitude = parseFloat(parts[1]);
-          }
-          const datePart = parseSparqlDate(val.value);
-          const year = datePartToYear(datePart);
-          newEvents.push({
-            id: `custom_${groupId}_${cat.id}_${i}`,
-            title: `${entityLabel} — ${label?.value || val.value}`,
-            description: `${cat.id} property result for ${entityLabel}.`,
-            year: year || new Date().getFullYear(),
-            date: { start: datePart, end: null },
-            latitude, longitude,
-            category: cat.id === "person" ? "person" : cat.id === "event" ? "war" : "culture",
-            significance: "national",
-            source: "Wikidata Custom Query",
-            search_group: groupId, search_query: searchText, search_color: groupColor,
-            wikipedia_url: `https://en.wikipedia.org/wiki/${encodeURIComponent(entityLabel.replace(/ /g, "_"))}`,
-          });
-        });
-      });
-
-      if (newEvents.length > 0) {
-        setEvents(prev => [...prev, ...newEvents]);
-        setGroups(prev => prev.find(g => g.id === groupId) ? prev : [...prev, { id: groupId, name: searchText.trim(), color: groupColor }]);
-        con.success(`Added ${newEvents.length} pin(s) for "${entityLabel}".`);
-      } else {
-        con.warn(`No mappable results found for "${searchText}".`);
-      }
-    } catch (err) {
-      con.error(`Custom query failed: ${err.message}`);
+  try {
+    // Step 1 — resolve text to entity candidates, take top result for now
+    const candidates = await resolveTextToEntities(searchText, { con });
+    if (!candidates.length) {
+      con.warn(`Could not find "${searchText}" on Wikidata.`);
+      setIsSearching(false);
+      return;
     }
-    setIsSearching(false);
-  };
+    const { qid, label: entityLabel } = candidates[0];
+    con.log(`Using: ${entityLabel} (${qid})`);
+
+    // Step 2 — build P-id list from active categories
+    const CATEGORY_DEFS = [
+      { id: "generic",      label: "Generic" },
+      { id: "person",       label: "Person" },
+      { id: "place",        label: "Place" },
+      { id: "event",        label: "Event" },
+      { id: "works",        label: "Works" },
+      { id: "organisation", label: "Organisation" },
+    ];
+    const active = CATEGORY_DEFS.filter(c => activeCategories.includes(c.id));
+    const pids   = active.map(c => selectedPids[c.id]).filter(Boolean);
+
+    if (!pids.length) {
+      con.warn('No properties selected.');
+      setIsSearching(false);
+      return;
+    }
+
+    // Step 3 — fetch raw property bindings
+    const rows = await fetchEntityProperties(qid, pids, { con });
+    if (!rows.length) {
+      con.warn(`No results for "${entityLabel}" with selected properties.`);
+      setIsSearching(false);
+      return;
+    }
+
+    // Step 4 — resolve Wikipedia URL once for the whole entity
+    const wikipediaUrl = await resolveWikipediaUrl(qid, { con });
+
+    // Step 5 — for each row + property, run through the pipeline
+    const newPins = [];
+    for (const row of rows) {
+      for (const cat of active) {
+        const pid      = selectedPids[cat.id];
+        const binding  = row[`p${pid}`];
+        const labelBind = row[`p${pid}Label`];
+        if (!binding) {
+          con.warn(`[query] no value for ${cat.label} (${pid}) in row ${rows.indexOf(row)}`);
+          continue;
+        };
+
+        const resolved = await resolveBinding(binding, labelBind, { con });
+        if (!resolved) continue;
+
+        const pin = resolvedToPin(resolved, {
+          entityLabel,
+          groupId,
+          groupColor,
+          category:    cat.id === 'person' ? 'person'
+                     : cat.id === 'event'  ? 'war'
+                     : 'culture',
+          significance: 'national',
+          wikipediaUrl,
+        });
+
+        if (pin) {
+          con.log(`Pin: "${pin.title}" at ${pin.latitude.toFixed(3)}, ${pin.longitude.toFixed(3)}`);
+          newPins.push(pin);
+        }
+      }
+    }
+
+    if (newPins.length > 0) {
+      setEvents(prev => [...prev, ...newPins]);
+      setGroups(prev =>
+        prev.find(g => g.id === groupId)
+          ? prev
+          : [...prev, { id: groupId, name: searchText.trim(), color: groupColor }]
+      );
+      con.success(`Added ${newPins.length} pin(s) for "${entityLabel}".`);
+    } else {
+      con.warn(`No mappable results found for "${searchText}".`);
+    }
+
+  } catch (err) {
+    con.error(`Custom query failed: ${err.message}`);
+    con.error(err.stack || '');
+  }
+
+  setIsSearching(false);
+};
 
   const handleSparqlSearch = async (searchTerm, properties) => {
     if (!searchTerm.trim()) return;

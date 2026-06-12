@@ -119,12 +119,15 @@ export default function EventSpreadsheetPanel({ events, onImportEvents, onEditEv
   });
 
   const handleExportCSV = () => {
+    const defaultName = `timespast-events-${new Date().toISOString().split("T")[0]}`;
+    const fileName = window.prompt("Name your export file:", defaultName);
+    if (!fileName) return; // user cancelled
     const csv = eventsToCSV(displayed);
     const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = `timespast-events-${new Date().toISOString().split("T")[0]}.csv`;
+    a.download = `${fileName.trim()}.csv`;
     a.click();
     URL.revokeObjectURL(url);
   };
