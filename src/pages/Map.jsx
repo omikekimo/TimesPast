@@ -8,7 +8,7 @@ import { MapPageContext } from "../components/context/MapPageContext";
 import { LayoutContext } from "../components/context/LayoutContext";
 import { nextGroupColor } from "../lib/searchGroups";
 import { parseSparqlDate, datePartToYear, formatPinDate, migrateLegacyPin, csvStringToDate } from "@/lib/dateUtils";
-import { fixLeafletIcons, createCustomIcon, spreadStackedMarkers, MapResizer, MapClickHandler, CATEGORY_COLORS } from '@/lib/mapUtils';
+import { fixLeafletIcons, createCustomIcon, createNoteIcon, spreadStackedMarkers, MapResizer, MapClickHandler, CATEGORY_COLORS } from '@/lib/mapUtils';
 import { ConsoleProvider, useConsole } from "../components/console/ConsoleContext";
 import { useIsMobile } from '../hooks/use-mobile';
 import { useMapHandlers } from '../hooks/useMapHandlers';
@@ -27,6 +27,8 @@ import AboutPanel from "../components/ui/AboutPanel";
 import MobileLayout from '../components/mobile/MobileLayout';
 import SessionPanel from '../components/session/SessionPanel';
 import {fetchEntityProperties, resolveBinding, resolvedToPin, resolveWikipediaUrl } from '@/lib/wikidataUtils';
+import QueryResultsViewer from '../components/ui/QueryResultsViewer';
+import ImageViewer from '../components/ui/ImageViewer';
 
 // Fix for default markers in react-leaflet
 fixLeafletIcons();
@@ -64,9 +66,39 @@ function MapPageInner() {
   const [hoveredEventId, setHoveredEventId] = useState(null);
   const [pickingLocation, setPickingLocation] = useState({ active: false, lat: null, lng: null });
   const [groups, setGroups] = useState([]);
+  const [queryResults, setQueryResults] = useState(null);
+  const [notes, setNotes] = useState([]);
   const markerRefs = useRef({});
   const layoutContext = useContext(LayoutContext);
   const setSidebarControls = layoutContext?.setSidebarControls;
+
+  const handleSaveNote = (noteData) => {
+  // If a parent pin was selected, inherit its location
+  const parentPin = noteData.parent_pin_id
+    ? events.find(e => e.id === noteData.parent_pin_id)
+    : null;
+
+  // Fall back to first pin in the timeline group if no parent selected
+  const groupPin = !parentPin && noteData.search_group
+    ? events.find(e =>
+        e.search_group === noteData.search_group &&
+        (e.latitude !== 0 || e.longitude !== 0)
+      )
+    : null;
+
+  const locationSource = parentPin || groupPin;
+
+  const note = {
+    ...noteData,
+    id:         `note_${Date.now()}`,
+    type:       'note',
+    latitude:   locationSource?.latitude  ?? 0,
+    longitude:  locationSource?.longitude ?? 0,
+    created_at: new Date().toISOString(),
+  };
+  setNotes(prev => [...prev, note]);
+  con.success(`[note] saved: "${note.title}"${parentPin ? ` → attached to "${parentPin.title}"` : ''}`);
+};
 
   const handlers = useMapHandlers({
   events, filteredEvents, groups, comparisonEvents,
@@ -77,6 +109,7 @@ function MapPageInner() {
   setTimeRange, setSelectedCategories,
   setSearchQuery, setPickingLocation,
   setIsSearching, setLayoutMode,
+  setQueryResults,
   con,
 });
 
@@ -124,7 +157,7 @@ function MapPageInner() {
 
   // ── All shared props for both layouts ─────────────────────────────────────
   const sharedProps = {
-    filteredEvents, events, hiddenEventIds, lockedEventIds,
+    filteredEvents, events, notes, hiddenEventIds, lockedEventIds,
     selectedEvent, setSelectedEvent,
     comparisonEvents,
     addToComparison: handlers.addToComparison,
@@ -224,6 +257,8 @@ function MapPageInner() {
             onClearAll={handlers.handleClearAllPins}
             groups={groups} onCreateGroup={handlers.handleCreateGroup}
             onImportEvents={handlers.handleImportEvents}
+            notes={notes}
+            onSelectNote={(note) => setQueryResults({ rows: note.rows, entityLabel: note.entity_label })}
           />
         </DraggablePanel>
 
@@ -242,6 +277,42 @@ function MapPageInner() {
               url="https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png"
               attribution='&copy; <a href="https://carto.com/">CARTO</a>'
             />
+
+            {/* Note markers — square icons offset below parent pin */}
+ {notes.map(note => {
+  const lat = note.latitude;
+  const lng = note.longitude;
+  if (lat === 0 && lng === 0) return null;
+  return (
+    <Marker
+      key={note.id}
+      position={[lat, lng]}
+      icon={createNoteIcon(note.search_color || '#6b7280')}
+      eventHandlers={{
+        click: () => setQueryResults({ rows: note.rows, entityLabel: note.entity_label }),
+        mouseover: e => e.target.setIcon(createNoteIcon(note.search_color || '#6b7280', true)),
+        mouseout:  e => e.target.setIcon(createNoteIcon(note.search_color || '#6b7280', false)),
+      }}
+    >
+      <Popup>
+        <div className="p-1.5 max-w-[180px]">
+          <div className="flex items-center gap-1.5 mb-1">
+            <span className="w-2.5 h-2.5 rounded-sm flex-shrink-0"
+              style={{ backgroundColor: note.search_color || '#6b7280' }} />
+            <p className="font-bold text-xs text-gray-900">{note.title}</p>
+          </div>
+          <p className="text-[10px] text-gray-500 mb-1.5">{note.rows?.length} result(s)</p>
+          <button
+            onClick={() => setQueryResults({ rows: note.rows, entityLabel: note.entity_label })}
+            className="text-xs bg-blue-600 text-white px-2 py-1 rounded-full w-full hover:bg-blue-700"
+          >
+            View Results
+          </button>
+        </div>
+      </Popup>
+    </Marker>
+  );
+})}
 
             {/* Polylines */}
             {(() => {
@@ -328,7 +399,7 @@ function MapPageInner() {
               event={selectedEvent} allEvents={filteredEvents}
               onClose={() => setSelectedEvent(null)}
               onAddToComparison={handlers.addToComparison}
-              onNavigate={handlers.handleNavigate} onEditEvent={handleEditEvent}
+              onNavigate={handlers.handleNavigate} onEditEvent={handlers.handleEditEvent}
             />
           </DraggablePanel>
         )}
@@ -342,6 +413,17 @@ function MapPageInner() {
             />
           </DraggablePanel>
         )}
+
+  {queryResults && (
+  <QueryResultsViewer
+  results={queryResults.rows}
+  entityLabel={queryResults.entityLabel}
+  onClose={() => setQueryResults(null)}
+  onSaveNote={handleSaveNote}
+  groups={groups}
+  availablePins={filteredEvents}
+/>
+)}
 
         {activeLayers.includes('console') && (
           <DraggablePanel initialPosition={{ x: 100, y: window.innerHeight - 420 }} dragHandleClassName="drag-handle">

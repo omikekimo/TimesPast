@@ -114,6 +114,29 @@ export function MapResizer() {
   return null;
 }
 
+// ── Create a square note marker ───────────────────────────────────────────────
+// Notes are represented as squares to distinguish them from circular pin markers.
+// color — the timeline group colour
+export function createNoteIcon(color = '#6b7280', isHovered = false) {
+  const size = isHovered ? 20 : 14;
+  return L.divIcon({
+    className: 'note-marker',
+    html: `<div style="
+      width:${size}px;height:${size}px;
+      background:${color};
+      border:2px solid white;
+      border-radius:2px;
+      box-shadow:0 2px 4px rgba(0,0,0,0.3);
+      display:flex;align-items:center;justify-content:center;
+      font-size:8px;color:white;font-weight:bold;">
+      N
+    </div>`,
+    iconSize:   [size, size],
+    iconAnchor: [size / 2, size / 2],
+  });
+}
+
+
 // ── MapClickHandler component ─────────────────────────────────────────────────
 // Listens for map clicks and calls onPick with { lat, lng } when picking is active.
 // Must be used as a child of <MapContainer>.
@@ -129,3 +152,4 @@ export function MapClickHandler({ picking, onPick }) {
   });
   return null;
 }
+

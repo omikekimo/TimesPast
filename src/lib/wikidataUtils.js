@@ -250,3 +250,82 @@ export async function runSparql(sparql, { con } = {}) {
   const data = await res.json();
   return data.results?.bindings || [];
 }
+
+// ── 11. Fetch structured event data for a Q-id ────────────────────────────────
+// Follows the prescribed event pipeline:
+//   location (P276 or P625) → start time (P580) → end time (P582)
+//   → point in time (P585) → country (P17)
+// Resolves coordinates via the existing pipeline if only a place entity is returned.
+// Returns a structured object ready for pin building, or null on failure.
+export async function fetchEventData(qid, { con } = {}) {
+  con?.log(`[wikidata] fetching event data for ${qid}…`);
+
+  const sparql = `
+    SELECT ?coords ?location ?locationLabel ?startDate ?endDate ?pointInTime ?countryLabel WHERE {
+      OPTIONAL { wd:${qid} wdt:P625 ?coords . }
+      OPTIONAL {
+        wd:${qid} wdt:P276 ?location .
+      }
+      OPTIONAL { wd:${qid} wdt:P580 ?startDate . }
+      OPTIONAL { wd:${qid} wdt:P582 ?endDate . }
+      OPTIONAL { wd:${qid} wdt:P585 ?pointInTime . }
+      OPTIONAL { wd:${qid} wdt:P17 ?country . }
+      SERVICE wikibase:label { bd:serviceParam wikibase:language "[AUTO_LANGUAGE],en". }
+    } LIMIT 1`;
+
+  try {
+    const rows = await runSparql(sparql, { con });
+    if (!rows.length) {
+      con?.warn(`[wikidata] no event data found for ${qid}`);
+      return null;
+    }
+
+    const row = rows[0];
+    con?.log(`[wikidata] event data received — resolving coordinates…`);
+
+    // Step 1 — try direct P625 coordinates first
+    let lat = null, lng = null, locationLabel = null;
+
+    if (row.coords?.value) {
+      const parsed = parseCoordinate(row.coords.value);
+      if (parsed) {
+        lat = parsed.lat;
+        lng = parsed.lng;
+        con?.log(`[wikidata] direct P625 coords: lat:${lat} lng:${lng}`);
+      }
+    }
+
+    // Step 2 — if no direct coords, resolve via P276 location entity
+    if (lat === null && row.location?.value) {
+      const locationQid = row.location.value.split('/').pop();
+      locationLabel = row.locationLabel?.value || locationQid;
+      con?.log(`[wikidata] no direct coords — resolving via location entity ${locationQid} (${locationLabel})…`);
+      const resolved = await resolveEntityCoordinates(locationQid, { con });
+      if (resolved) {
+        lat = resolved.lat;
+        lng = resolved.lng;
+      }
+    }
+
+    if (lat === null) {
+      con?.warn(`[wikidata] no coordinates resolved for ${qid}`);
+    }
+
+    const result = {
+      lat,
+      lng,
+      locationLabel: locationLabel || row.locationLabel?.value || null,
+      startDate:     row.startDate?.value   || null,
+      endDate:       row.endDate?.value     || null,
+      pointInTime:   row.pointInTime?.value || null,
+      country:       row.countryLabel?.value || null,
+    };
+
+    con?.log(`[wikidata] event data: start=${result.startDate || '—'} end=${result.endDate || '—'} point=${result.pointInTime || '—'}`);
+    return result;
+
+  } catch (err) {
+    con?.error(`[wikidata] fetchEventData failed: ${err.message}`);
+    return null;
+  }
+}

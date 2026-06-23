@@ -10,11 +10,31 @@ import { nextGroupColor } from '@/lib/searchGroups';
 import { parseSparqlDate, datePartToYear, csvStringToDate } from '@/lib/dateUtils';
 import {
   fetchEntityProperties,
+  fetchEventData,
   resolveBinding,
   resolvedToPin,
   resolveWikipediaUrl,
 } from '@/lib/wikidataUtils';
 import { InvokeLLM } from '@/integrations/Core';
+
+// Checks if a timeline group with this name already exists.
+// If it does, asks the user if they want to reuse it.
+// Returns { groupId, groupColor } — either existing or new.
+function resolveGroupForSearch(searchName, groups) {
+  const existing = groups.find(
+    g => g.name.toLowerCase() === searchName.toLowerCase()
+  );
+  if (existing) {
+    const reuse = window.confirm(
+      `A timeline group called "${existing.name}" already exists.\n\nAdd new pins to it?`
+    );
+    if (reuse) {
+      return { groupId: existing.id, groupColor: existing.color };
+    }
+  }
+  // No match, or user declined — create a new group
+  return { groupId: `search_${Date.now()}`, groupColor: nextGroupColor() };
+}
 
 export function useMapHandlers({
   // current state (read-only in handlers)
@@ -38,6 +58,7 @@ export function useMapHandlers({
   setPickingLocation,
   setIsSearching,
   setLayoutMode,
+  setQueryResults,
   // console context
   con,
 }) {
@@ -322,9 +343,8 @@ export function useMapHandlers({
       const row         = results[0];
       const personName  = row.itemLabel?.value || searchTerm;
       const wikipediaUrl = row.wikipediaUrl?.value || `https://en.wikipedia.org/wiki/${encodeURIComponent(personName)}`;
-      const groupId     = `sparql_${Date.now()}`;
-      const groupColor  = nextGroupColor();
-      const newEvents   = [];
+      const { groupId, groupColor } = resolveGroupForSearch(searchTerm.trim(), groups);
+      const newEvents = [];
 
       propDefs.forEach(prop => {
         if (!properties.includes(prop.id) || !row[prop.sparqlVar]) return;
@@ -370,9 +390,8 @@ export function useMapHandlers({
 
   const handleCustomQuery = useCallback(async (qid, entityLabel, activeCategories, selectedPids) => {
     setIsSearching(true);
-    const groupId    = `custom_${Date.now()}`;
-    const groupColor = nextGroupColor();
-    con?.log(`[custom] querying: ${entityLabel} (${qid})`);
+   const { groupId, groupColor } = resolveGroupForSearch(entityLabel, groups);
+   con?.log(`[custom] querying: ${entityLabel} (${qid})`);
 
     try {
       const CATEGORY_DEFS = [
@@ -422,12 +441,59 @@ export function useMapHandlers({
         }
       }
 
+      // Find pins with no resolved location (defaulted to 0,0)
+const zeroPins = newPins.filter(p => p.latitude === 0 && p.longitude === 0);
+const realPins = newPins.filter(p => p.latitude !== 0 || p.longitude !== 0);
+
+if (zeroPins.length > 0) {
+  // Also check existing pins in the same timeline group for a location
+  const existingGroupPins = events.filter(
+    e => e.search_group === groupId && (e.latitude !== 0 || e.longitude !== 0)
+  );
+  const locationSource = realPins[0] || existingGroupPins[0];
+
+  if (locationSource) {
+    const inherit = window.confirm(
+      `${zeroPins.length} pin(s) have no location data.\n\nInherit location from "${locationSource.title}" in this timeline group?`
+    );
+    if (inherit) {
+      zeroPins.forEach(p => {
+        p.latitude  = locationSource.latitude;
+        p.longitude = locationSource.longitude;
+      });
+      con?.log(`[custom] ${zeroPins.length} pin(s) inherited location from "${locationSource.title}"`);
+    }
+  } else {
+    con?.warn(`[custom] ${zeroPins.length} pin(s) have no location and no source to inherit from`);
+  }
+}
+
+        // Extract any image URLs from the raw rows
+const imageUrl = (() => {
+  for (const row of rows) {
+    for (const binding of Object.values(row)) {
+      const v = binding?.value || '';
+      if (v.includes('Special:FilePath') || /\.(jpg|jpeg|png|gif|webp)/i.test(v)) {
+        return v;
+      }
+    }
+  }
+  return null;
+})();
+
+// Attach image to all pins in this group
+if (imageUrl) {
+  newPins.forEach(p => { p.image_url = imageUrl; });
+  con?.log(`[custom] image found: ${imageUrl}`);
+}
+
       if (newPins.length > 0) {
         setEvents(prev => [...prev, ...newPins]);
         setGroups(prev => prev.find(g => g.id === groupId) ? prev : [...prev, { id: groupId, name: entityLabel, color: groupColor }]);
         con?.success(`[custom] added ${newPins.length} pin(s) for "${entityLabel}"`);
       } else {
-        con?.warn(`[custom] no mappable results found for "${entityLabel}"`);
+        con?.warn(`[custom] no mappable results found for "${entityLabel}" — showing raw results`);
+        setQueryResults?.({ rows, entityLabel });
       }
     } catch (err) {
       con?.error(`[custom] failed: ${err.message}`);
@@ -436,12 +502,105 @@ export function useMapHandlers({
     setIsSearching(false);
   }, [setEvents, setGroups, setIsSearching, con]);
 
-  const handleEventSearch = useCallback(async (query) => {
-    if (!query.trim()) { return; }
-    setIsSearching(true);
-    con?.log(`[events] AI search: "${query}" — not yet implemented`);
-    setIsSearching(false);
-  }, [setIsSearching, con]);
+  const handleEventSearch = useCallback(async (qid, label) => {
+  if (!qid) return;
+  setIsSearching(true);
+  con?.log(`[events] searching: ${label} (${qid})`);
+
+  try {
+    // Step 1 — fetch structured event data via the pipeline
+    const eventData = await fetchEventData(qid, { con });
+    if (!eventData) {
+      con?.warn(`[events] no data returned for "${label}"`);
+      setIsSearching(false);
+      return;
+    }
+
+    const { lat, lng, locationLabel, startDate, endDate, pointInTime } = eventData;
+
+    // Step 2 — resolve or reuse a timeline group
+    const { groupId, groupColor } = resolveGroupForSearch(label, groups);
+    const wikipediaUrl = await resolveWikipediaUrl(qid, { con });
+
+    const basePin = {
+      latitude:      lat  ?? 0,
+      longitude:     lng  ?? 0,
+      category:      'culture',   // sensible default — user can edit
+      significance:  'global',
+      source:        'Wikidata Events',
+      search_group:  groupId,
+      search_color:  groupColor,
+      search_query:  label,
+      wikipedia_url: wikipediaUrl || '',
+      links:         wikipediaUrl ? [{ label: 'Wikipedia', url: wikipediaUrl }] : [],
+    };
+
+    const newPins = [];
+
+    if (pointInTime && !startDate && !endDate) {
+      // Single point-in-time event — one pin
+      const datePart = parseSparqlDate(pointInTime);
+      const year     = datePartToYear(datePart);
+      newPins.push({
+        ...basePin,
+        id:          `event_${groupId}_0`,
+        title:       label,
+        description: `${label}${locationLabel ? ` at ${locationLabel}` : ''}.`,
+        year,
+        date: { start: datePart, end: null },
+      });
+      con?.log(`[events] point-in-time pin: "${label}" (${year})`);
+
+    } else {
+      // Range event — start pin and/or end pin connected by polyline
+      if (startDate) {
+        const datePart = parseSparqlDate(startDate);
+        const year     = datePartToYear(datePart);
+        newPins.push({
+          ...basePin,
+          id:          `event_${groupId}_start`,
+          title:       `${label} — Start`,
+          description: `Start of ${label}${locationLabel ? ` at ${locationLabel}` : ''}.`,
+          year,
+          date: { start: datePart, end: null },
+        });
+        con?.log(`[events] start pin: ${year}`);
+      }
+
+      if (endDate) {
+        const datePart = parseSparqlDate(endDate);
+        const year     = datePartToYear(datePart);
+        newPins.push({
+          ...basePin,
+          id:          `event_${groupId}_end`,
+          title:       `${label} — End`,
+          description: `End of ${label}${locationLabel ? ` at ${locationLabel}` : ''}.`,
+          year,
+          date: { start: datePart, end: null },
+        });
+        con?.log(`[events] end pin: ${year}`);
+      }
+    }
+
+    if (newPins.length > 0) {
+      setEvents(prev => [...prev, ...newPins]);
+      setGroups(prev =>
+        prev.find(g => g.id === groupId)
+          ? prev
+          : [...prev, { id: groupId, name: label, color: groupColor }]
+      );
+      con?.success(`[events] added ${newPins.length} pin(s) for "${label}"`);
+    } else {
+      con?.warn(`[events] no temporal data found for "${label}" — try Custom Query for more options`);
+    }
+
+  } catch (err) {
+    con?.error(`[events] search failed: ${err.message}`);
+    con?.error(err.stack || '');
+  }
+
+  setIsSearching(false);
+}, [setEvents, setGroups, setIsSearching, groups, con]);
 
   // ── Return all handlers ───────────────────────────────────────────────────
   return {

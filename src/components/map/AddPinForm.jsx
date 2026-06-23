@@ -262,7 +262,7 @@ export default function AddPinForm({ onAdd, pickingLocation, onStartPickLocation
       {/* Group */}
       {groups.length > 0 && (
         <div>
-          <label className="text-[10px] text-gray-500 mb-0.5 block">Add to group (optional)</label>
+          <label className="text-[10px] text-gray-500 mb-0.5 block">Add to timeline group (optional)</label>
           <select className="w-full border rounded px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-blue-400 bg-white"
             value={selectedGroupId} onChange={e => setSelectedGroupId(e.target.value)}>
             <option value="">— no group —</option>

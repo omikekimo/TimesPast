@@ -30,6 +30,8 @@ export default function DataTimelineControls({
   onCreateGroup,
   className,
   onRenameGroup,
+  notes = [],
+  onSelectNote,
 
 }) {
   const [rightTab, setRightTab] = useState("layers"); // "layers" | "spreadsheet"
@@ -57,7 +59,7 @@ export default function DataTimelineControls({
                   className="flex items-center gap-1 text-xs text-blue-600 hover:text-blue-800 hover:bg-blue-50 px-2 py-1 rounded-md transition-colors"
                   title="Create a new group"
                 >
-                  <FolderPlus className="w-3.5 h-3.5" /> New Group
+                  <FolderPlus className="w-3.5 h-3.5" /> New Timeline Group
                 </button>
               )}
               {onClearAll && (
@@ -136,6 +138,8 @@ export default function DataTimelineControls({
                 </div>
                 <EventLayerPanel
                   events={events}
+                  notes={notes}
+                  onSelectNote={onSelectNote}
                   hiddenEventIds={hiddenEventIds}
                   lockedEventIds={lockedEventIds}
                   onToggleVisible={onToggleVisible}

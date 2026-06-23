@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Search, Loader2, Grab, ChevronDown, ChevronUp, ExternalLink } from "lucide-react";
 import { motion } from "framer-motion";
 import { resolveTextToEntities } from "@/lib/wikidataUtils";
+import DisambiguationList from "@/components/ui/DisambiguationList";
 
 // ── Property definitions ─────────────────────────────────────────────────────
 const PROPERTY_CATEGORIES = [
@@ -154,37 +155,7 @@ function CategoryRow({ cat, selectedPid, onPidChange }) {
   );
 }
 
-// ── Candidate card ───────────────────────────────────────────────────────────
-function CandidateCard({ candidate, onSelect }) {
-  return (
-    <button
-      type="button"
-      onClick={() => onSelect(candidate)}
-      className="w-full text-left px-3 py-2 rounded-lg border border-gray-200 hover:border-violet-400 hover:bg-violet-50 transition-colors group"
-    >
-      <div className="flex items-start justify-between gap-2">
-        <div className="flex-1 min-w-0">
-          <div className="flex items-center gap-2">
-            <span className="text-sm font-semibold text-gray-900 truncate">
-              {candidate.label}
-            </span>
-            <span className="text-[10px] text-gray-400 flex-shrink-0 font-mono">
-              {candidate.qid}
-            </span>
-          </div>
-          {candidate.description && (
-            <p className="text-xs text-gray-500 mt-0.5 line-clamp-2 leading-relaxed">
-              {candidate.description}
-            </p>
-          )}
-        </div>
-        <ExternalLink className="w-3 h-3 text-gray-300 group-hover:text-violet-400 flex-shrink-0 mt-1"
-          onClick={e => { e.stopPropagation(); window.open(candidate.url, '_blank'); }}
-        />
-      </div>
-    </button>
-  );
-}
+
 
 // ── Main component ───────────────────────────────────────────────────────────
 export default function CustomQueryPanel({ onSearch, isSearching }) {
@@ -330,7 +301,11 @@ export default function CustomQueryPanel({ onSearch, isSearching }) {
               </div>
               <div className="space-y-1.5">
                 {candidates.map(c => (
-                  <CandidateCard key={c.qid} candidate={c} onSelect={handleCandidateSelect} />
+                  <DisambiguationList
+  candidates={candidates}
+  onSelect={handleCandidateSelect}
+  onCancel={handleCancel}
+/>
                 ))}
               </div>
             </div>
