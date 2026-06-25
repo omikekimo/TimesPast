@@ -47,23 +47,52 @@ function BindingValue({ value }) {
 
 // ── CSV export ────────────────────────────────────────────────────────────────
 function exportResultsCsv(results, entityLabel) {
-  const defaultName = `${entityLabel.replace(/[^a-z0-9]/gi, '_')}_results`;
+  const defaultName = `${entityLabel.replace(/[^a-z0-9]/gi, '_')}_note`;
   const fileName = window.prompt('Name your export file:', defaultName);
   if (!fileName) return;
 
-  const allKeys = [...new Set(
-    results.flatMap(row => Object.keys(row).filter(k => !k.endsWith('Label')))
-  )];
-  const escape = v => `"${String(v || '').replace(/"/g, '""')}"`;
-  const header = ['Label', ...allKeys, ...allKeys.map(k => `${k}_type`)].join(',');
-  const rows   = results.map(row => {
-    const label = allKeys.map(k => row[`${k}Label`]?.value || '').filter(Boolean)[0] || '';
-    return [escape(label), ...allKeys.map(k => escape(row[k]?.value || '')), ...allKeys.map(k => escape(row[k]?.type || ''))].join(',');
+  // Event header row (no events, but keeps import parser happy)
+  const eventHeader = 'Title,Date,Time,Category,Significance,Description,Wikipedia URL,Source,Search Group,Search Query,Search Color,Latitude,Longitude,ID (internal)';
+
+  // Note block
+  const noteHeader = [
+    '##NOTE_START##',
+    entityLabel,
+    entityLabel,
+    '',  // parent_pin_id — unknown at export time
+    '',  // search_group
+    '',  // search_color
+    new Date().toISOString(),
+  ].map(v => `"${String(v).replace(/"/g, '""')}"`).join(',');
+
+  const bindingHeader = 'RowIndex,Property,Label,Value,Type';
+
+  const toVal = v => `"${String(v || '').replace(/"/g, '""')}"`;
+
+  const bindingRows = [];
+  results.forEach((row, rowIdx) => {
+    Object.entries(row)
+      .filter(([key]) => !key.endsWith('Label'))
+      .forEach(([key, binding]) => {
+        const label = row[`${key}Label`]?.value || '';
+        bindingRows.push([
+          rowIdx,
+          toVal(key),
+          toVal(label),
+          toVal(binding.value || ''),
+          toVal(binding.type  || ''),
+        ].join(','));
+      });
   });
-  const blob = new Blob([[header, ...rows].join('\n')], { type: 'text/csv;charset=utf-8;' });
+
+  const full = [eventHeader, noteHeader, bindingHeader, ...bindingRows, '##NOTE_END##'].join('\n');
+
+  const blob = new Blob([full], { type: 'text/csv;charset=utf-8;' });
   const url  = URL.createObjectURL(blob);
   const a    = document.createElement('a');
-  a.href = url; a.download = `${fileName.trim()}.csv`; a.click();
+  a.href     = url;
+  a.download = `${fileName.trim()}.csv`;
+  a.click();
   URL.revokeObjectURL(url);
 }
 

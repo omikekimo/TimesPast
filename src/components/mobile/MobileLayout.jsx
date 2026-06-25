@@ -225,6 +225,8 @@ export default function MobileLayout({
             onCreateGroup={handleCreateGroup}
             onRenameGroup={handleRenameGroup}
             onImportEvents={onImportEvents}
+            notes={notes}
+            onImportNotes={onImportNotes}
           />
         </div>
       </MobileBottomSheet>

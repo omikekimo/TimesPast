@@ -78,6 +78,9 @@ function MapPageInner() {
     ? events.find(e => e.id === noteData.parent_pin_id)
     : null;
 
+
+
+
   // Fall back to first pin in the timeline group if no parent selected
   const groupPin = !parentPin && noteData.search_group
     ? events.find(e =>
@@ -98,6 +101,29 @@ function MapPageInner() {
   };
   setNotes(prev => [...prev, note]);
   con.success(`[note] saved: "${note.title}"${parentPin ? ` → attached to "${parentPin.title}"` : ''}`);
+};
+
+const handleImportNotes = (importedNotes) => {
+  // Resolve parent pin locations for any notes that have a parent_pin_id
+  const resolved = importedNotes.map(note => {
+    const parentPin = note.parent_pin_id
+      ? events.find(e => e.id === note.parent_pin_id)
+      : null;
+    const groupPin = !parentPin && note.search_group
+      ? events.find(e =>
+          e.search_group === note.search_group &&
+          (e.latitude !== 0 || e.longitude !== 0)
+        )
+      : null;
+    const loc = parentPin || groupPin;
+    return {
+      ...note,
+      latitude:  loc?.latitude  ?? 0,
+      longitude: loc?.longitude ?? 0,
+    };
+  });
+  setNotes(prev => [...prev, ...resolved]);
+  con.success(`[note] imported ${resolved.length} note(s)`);
 };
 
   const handlers = useMapHandlers({
@@ -184,6 +210,7 @@ function MapPageInner() {
     handleRenameGroup: handlers.handleRenameGroup,
     onAddPin: handlers.handleAddPin,
     onImportEvents: handlers.handleImportEvents,
+    onImportNotes: handleImportNotes,
   };
 
   // ── Mobile layout ──────────────────────────────────────────────────────────
@@ -259,6 +286,7 @@ function MapPageInner() {
             onImportEvents={handlers.handleImportEvents}
             notes={notes}
             onSelectNote={(note) => setQueryResults({ rows: note.rows, entityLabel: note.entity_label })}
+            onImportNotes={handleImportNotes}
           />
         </DraggablePanel>
 

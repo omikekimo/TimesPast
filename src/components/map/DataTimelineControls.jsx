@@ -32,6 +32,7 @@ export default function DataTimelineControls({
   onRenameGroup,
   notes = [],
   onSelectNote,
+  onImportNotes,
 
 }) {
   const [rightTab, setRightTab] = useState("layers"); // "layers" | "spreadsheet"
@@ -161,6 +162,8 @@ export default function DataTimelineControls({
                 events={events}
                 onImportEvents={onImportEvents}
                 onEditEvent={onEditEvent}
+                notes={notes}
+                onImportNotes={onImportNotes}
               />
             )}
           </div>
