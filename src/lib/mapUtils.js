@@ -22,7 +22,7 @@ export function fixLeafletIcons() {
 
 // ── Category colour map ───────────────────────────────────────────────────────
 // Single source of truth for pin colours by category.
-export export const CATEGORY_COLORS = {
+export const CATEGORY_COLORS = {
   people:           '#f59e0b',
   organisations:    '#f97316',
   livingEntities:   '#84cc16',
