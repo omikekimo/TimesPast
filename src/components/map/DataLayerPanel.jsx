@@ -3,15 +3,20 @@ import { Eye, EyeOff, Lock, Unlock, Trash2, Layers, Pencil, ChevronDown, Chevron
 import EditPinModal from "./EditPinModal";
 
 const categoryColors = {
-  war:              { bg: "#dc2626", label: "War" },
-  politics:         { bg: "#7c3aed", label: "Politics" },
-  culture:          { bg: "#059669", label: "Culture" },
-  science:          { bg: "#2563eb", label: "Science" },
-  natural_disaster: { bg: "#ea580c", label: "Disaster" },
-  economics:        { bg: "#ca8a04", label: "Economics" },
-  religion:         { bg: "#9333ea", label: "Religion" },
-  exploration:      { bg: "#0891b2", label: "Exploration" },
-  person:           { bg: "#f59e0b", label: "Person" },
+  people:           { bg: '#f59e0b', label: 'People'           },
+  organisations:    { bg: '#f97316', label: 'Organisations'     },
+  livingEntities:   { bg: '#84cc16', label: 'Living Entities'   },
+  artificialAgents: { bg: '#0ea5e9', label: 'Artificial Agents' },
+  events:           { bg: '#3b82f6', label: 'Events'            },
+  phenomena:        { bg: '#eab308', label: 'Phenomena'         },
+  conflicts:        { bg: '#ef4444', label: 'Conflicts'         },
+  places:           { bg: '#22c55e', label: 'Places'            },
+  objects:          { bg: '#78716c', label: 'Objects'           },
+  technology:       { bg: '#6366f1', label: 'Technology'        },
+  works:            { bg: '#f43f5e', label: 'Works'             },
+  concepts:         { bg: '#a855f7', label: 'Concepts & Ideas'  },
+  sciences:         { bg: '#14b8a6', label: 'Sciences'          },
+  weather:          { bg: '#06b6d4', label: 'Weather'           },
 };
 
 // ── Group header with rename ──────────────────────────────────────────────────
@@ -76,7 +81,7 @@ function NoteRow({ note, onSelectNote }) {
 }
 
 // ── Main component ────────────────────────────────────────────────────────────
-export default function EventLayerPanel({
+export default function DataLayerPanel({
   events,
   notes = [],
   onSelectNote,
@@ -131,9 +136,10 @@ export default function EventLayerPanel({
     onRenameGroup?.(groupKey, newName);
   };
 
-  // Separate notes into attached (have parent_pin_id) and orphaned
-  const attachedNotes = notes.filter(n => n.parent_pin_id);
-  const orphanNotes   = notes.filter(n => !n.parent_pin_id);
+  // Separate notes: "attached" only if parent pin actually exists in current events
+const eventIds = new Set(events.map(e => e.id));
+const attachedNotes = notes.filter(n => n.parent_pin_id && eventIds.has(n.parent_pin_id));
+const orphanNotes   = notes.filter(n => !n.parent_pin_id || !eventIds.has(n.parent_pin_id));
 
   // ── Event row ──────────────────────────────────────────────────────────────
   const EventRow = ({ event }) => {

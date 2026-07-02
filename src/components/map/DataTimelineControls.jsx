@@ -4,8 +4,8 @@ import { Badge } from "@/components/ui/badge";
 import { Clock, Grab, Layers, TableProperties, Trash2, FolderPlus } from "lucide-react";
 import AddPinForm from "./AddPinForm";
 import { motion } from "framer-motion";
-import EventLayerPanel from "./EventLayerPanel";
-import EventSpreadsheetPanel from "./EventSpreadsheetPanel";
+import DataLayerPanel from "./DataLayerPanel";
+import DataSpreadsheetPanel from "./DataSpreadsheetPanel";
 import TimelineSlider from "./TimelineSlider";
 
 export default function DataTimelineControls({
@@ -137,7 +137,7 @@ export default function DataTimelineControls({
                 <div className="text-xs text-gray-400 flex items-center px-2">
                   <span className="ml-auto">👁 🔒 🗑</span>
                 </div>
-                <EventLayerPanel
+                <DataLayerPanel
                   events={events}
                   notes={notes}
                   onSelectNote={onSelectNote}
@@ -158,7 +158,7 @@ export default function DataTimelineControls({
             )}
 
             {rightTab === "spreadsheet" && (
-              <EventSpreadsheetPanel
+              <DataSpreadsheetPanel
                 events={events}
                 onImportEvents={onImportEvents}
                 onEditEvent={onEditEvent}

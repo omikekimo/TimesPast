@@ -33,7 +33,7 @@ function getLinks(event) {
   return [];
 }
 
-export default function EventDetails({
+export default function DataDetails({
   event,
   allEvents = [],
   onClose,

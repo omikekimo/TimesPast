@@ -8,8 +8,8 @@ import 'leaflet/dist/leaflet.css';
 import MobileDrawer from './MobileDrawer';
 import MobileBottomSheet, { SHEET_SIZES } from './MobileBottomSheet';
 import DataTimelineControls from '../map/DataTimelineControls';
-import EventDetails from '../map/EventDetails';
-import EventComparison from '../map/EventComparison';
+import EventDetails from '../map/DataDetails';
+import EventComparison from '../map/DataComparison';
 import AddPinForm from '../map/AddPinForm';
 import ConsolePanel from '../console/ConsolePanel';
 import AboutPanel from '../ui/AboutPanel';
@@ -257,7 +257,7 @@ export default function MobileLayout({
         title={selectedEvent?.title}
       >
         {selectedEvent && (
-          <EventDetails
+          <DataDetails
             event={selectedEvent}
             allEvents={filteredEvents}
             onClose={() => { closeSheet(); setSelectedEvent(null); }}
@@ -275,7 +275,7 @@ export default function MobileLayout({
         size={SHEET_SIZES.HALF}
         title="Comparison"
       >
-        <EventComparison
+        <DataComparison
           events={comparisonEvents}
           onRemoveEvent={removeFromComparison}
           onClearAll={() => { setComparisonEvents([]); closeSheet(); }}

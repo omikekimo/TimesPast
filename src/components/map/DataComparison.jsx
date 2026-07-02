@@ -17,7 +17,7 @@ const categoryColors = {
   exploration: "bg-cyan-100 text-cyan-800"
 };
 
-export default function EventComparison({
+export default function DataComparison({
   events,
   onRemoveEvent,
   onClearAll,

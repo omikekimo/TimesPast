@@ -12,13 +12,13 @@ import { fixLeafletIcons, createCustomIcon, createNoteIcon, spreadStackedMarkers
 import { ConsoleProvider, useConsole } from "../components/console/ConsoleContext";
 import { useIsMobile } from '../hooks/use-mobile';
 import { useMapHandlers } from '../hooks/useMapHandlers';
-import EventSearchPanel from "../components/map/SearchPanel";
-import SparqlSearchPanel from "../components/layers/SparqlSearchPanel";
+import EventSearchPanel from "../components/layers/EventSearch";
+import PeopleSearchPanel from "../components/layers/PeopleSearch";
 import LayerSwitcher from "../components/layers/LayerSwitcher";
 import CustomQueryPanel from "../components/layers/CustomQueryPanel";
 import DataTimelineControls from "../components/map/DataTimelineControls";
-import EventDetails from "../components/map/EventDetails";
-import EventComparison from "../components/map/EventComparison";
+import DataDetails from "../components/map/DataDetails";
+import DataComparison from "../components/map/DataComparison";
 import SidebarSessionControls from "../components/session/SidebarSessionControls";
 import GlobeView from "../components/ui/GlobeView";
 import DraggablePanel from "../components/ui/DraggablePanel";
@@ -56,7 +56,7 @@ function MapPageInner() {
   const [comparisonEvents, setComparisonEvents] = useState([]);
   const [timeRange, setTimeRange] = useState({ start: -3000, end: new Date().getFullYear() });
   const [searchQuery, setSearchQuery] = useState("");
-  const [selectedCategories, setSelectedCategories] = useState([]);
+
   const [isLoading, setIsLoading] = useState(true);
   const [isSearching, setIsSearching] = useState(false);
   const [activeLayers, setActiveLayers] = useState(['people']);
@@ -132,7 +132,7 @@ const handleImportNotes = (importedNotes) => {
   setEvents, setGroups, setComparisonEvents,
   setHiddenEventIds, setLockedEventIds,
   setSelectedEvent, setActiveLayers,
-  setTimeRange, setSelectedCategories,
+  setTimeRange,
   setSearchQuery, setPickingLocation,
   setIsSearching, setLayoutMode,
   setQueryResults,
@@ -141,18 +141,16 @@ const handleImportNotes = (importedNotes) => {
 
   useEffect(() => { setIsLoading(false); }, []);
 
-  useEffect(() => { filterEvents(); }, [events, timeRange, selectedCategories, searchQuery, activeLayers]);
+  useEffect(() => { filterEvents(); }, [events, timeRange, searchQuery, activeLayers]);
 
   const filterEvents = () => {
     let layerFiltered = events.filter(event => {
-      if (activeLayers.includes('events') && event.category !== 'person') return true;
-      if (activeLayers.includes('people') && event.category === 'person') return true;
-      if (activeLayers.includes('customQueries') && event.source === 'Wikidata Custom Query') return true;
-      return false;
+      if (activeLayers.includes(event.category)) return true;
+      if (activeLayers.includes('events') && !event.category) return true;
     });
     let filtered = layerFiltered.filter(event => {
       const withinTimeRange = event.year >= timeRange.start && event.year <= timeRange.end;
-      const matchesCategory = selectedCategories.length === 0 || selectedCategories.includes(event.category);
+
       const matchesSearch = !searchQuery ||
         event.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
         event.description?.toLowerCase().includes(searchQuery.toLowerCase());
@@ -162,8 +160,8 @@ const handleImportNotes = (importedNotes) => {
   };
 
   const getCurrentSessionInfo = useCallback(() => ({
-    eventCount: filteredEvents.length, activeLayers, timeRange, selectedCategories, searchQuery
-  }), [filteredEvents.length, activeLayers, timeRange, selectedCategories, searchQuery]);
+    eventCount: filteredEvents.length, activeLayers, timeRange, searchQuery
+  }), [filteredEvents.length, activeLayers, timeRange, searchQuery]);
 
  const sessionControlHandlers = {
   onSaveSession: handlers.handleSaveSession,
@@ -191,7 +189,7 @@ const handleImportNotes = (importedNotes) => {
     setComparisonEvents,
     timeRange, setTimeRange,
     activeLayers, setActiveLayers,
-    selectedCategories, setSelectedCategories,
+
     isSearching,
     pickingLocation, setPickingLocation,
     groups, setGroups,
@@ -242,16 +240,15 @@ const handleImportNotes = (importedNotes) => {
 
         {activeLayers.includes('events') && (
           <DraggablePanel initialPosition={{ x: 24, y: 300 }} dragHandleClassName="drag-handle">
-            <EventSearchPanel
+             <EventSearchPanel
               onSearch={handlers.handleEventSearch} isSearching={isSearching}
-              selectedCategories={selectedCategories} onCategoryChange={setSelectedCategories}
             />
           </DraggablePanel>
         )}
 
         {activeLayers.includes('people') && (
           <DraggablePanel initialPosition={{ x: 24, y: 300 }} dragHandleClassName="drag-handle">
-            <SparqlSearchPanel onSearch={handlers.handleSparqlSearch} isSearching={isSearching} />
+            <PeopleSearchPanel onSearch={handlers.handleSparqlSearch} isSearching={isSearching} />
           </DraggablePanel>
         )}
 

@@ -254,7 +254,7 @@ export function useMapHandlers({
       }
 
       return {
-        id:           `${groupId}_imported_${i}`,
+        id:           r.id || `${groupId}_imported_${i}`,
         title:        r.title, year, date: parsedDate,
         latitude:     parseFloat(r.latitude)  || 0,
         longitude:    parseFloat(r.longitude) || 0,
@@ -290,7 +290,7 @@ export function useMapHandlers({
 
   // ── Wikidata searches ─────────────────────────────────────────────────────
 
-  const handleSparqlSearch = useCallback(async (searchTerm, properties) => {
+  const handleSparqlSearch = useCallback(async (searchTerm) => {
     if (!searchTerm.trim()) return;
     setIsSearching(true);
     con?.log(`[sparql] people search: "${searchTerm}"`);
@@ -304,9 +304,8 @@ export function useMapHandlers({
       if (!qId) { con?.warn(`Could not find "${searchTerm}" on Wikidata`); setIsSearching(false); return; }
 
       const propDefs = [
-        { id: 'P569',  label: 'Birth',   sparqlVar: 'birthDate',   placeId: 'P19', placeVar: 'birthPlace' },
-        { id: 'P570',  label: 'Death',   sparqlVar: 'deathDate',   placeId: 'P20', placeVar: 'deathPlace' },
-        { id: 'P1317', label: 'Floruit', sparqlVar: 'floruitDate', placeId: null,  placeVar: null },
+        { id: 'P569', label: 'Birth', sparqlVar: 'birthDate', placeId: 'P19', placeVar: 'birthPlace' },
+        { id: 'P570', label: 'Death', sparqlVar: 'deathDate', placeId: 'P20', placeVar: 'deathPlace' },
       ];
 
       let selectClause = 'SELECT ?itemLabel ?wikipediaUrl';
@@ -395,12 +394,20 @@ export function useMapHandlers({
 
     try {
       const CATEGORY_DEFS = [
-        { id: 'generic',      label: 'Generic' },
-        { id: 'person',       label: 'Person' },
-        { id: 'place',        label: 'Place' },
-        { id: 'event',        label: 'Event' },
-        { id: 'works',        label: 'Works' },
-        { id: 'organisation', label: 'Organisation' },
+        { id: 'people',          targetLayer: 'people'          },
+        { id: 'organisations',   targetLayer: 'organisations'   },
+        { id: 'livingEntities',  targetLayer: 'livingEntities'  },
+        { id: 'artificialAgents',targetLayer: 'artificialAgents'},
+        { id: 'events',          targetLayer: 'events'          },
+        { id: 'phenomena',       targetLayer: 'phenomena'       },
+        { id: 'conflicts',       targetLayer: 'conflicts'       },
+        { id: 'places',          targetLayer: 'places'          },
+        { id: 'objects',         targetLayer: 'objects'         },
+        { id: 'technology',      targetLayer: 'technology'      },
+        { id: 'works',           targetLayer: 'works'           },
+        { id: 'concepts',        targetLayer: 'concepts'        },
+        { id: 'sciences',        targetLayer: 'sciences'        },
+        { id: 'weather',         targetLayer: 'weather'         },
       ];
       const active = CATEGORY_DEFS.filter(c => activeCategories.includes(c.id));
       const pids   = active.map(c => selectedPids[c.id]).filter(Boolean);
@@ -429,7 +436,7 @@ export function useMapHandlers({
 
           const pin = resolvedToPin(resolved, {
             entityLabel, groupId, groupColor,
-            category:    cat.id === 'person' ? 'person' : cat.id === 'event' ? 'war' : 'culture',
+            category:    cat.targetLayer,
             significance: 'national',
             wikipediaUrl,
           });

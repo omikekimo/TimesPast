@@ -182,7 +182,7 @@ const CATEGORIES        = ["war", "politics", "culture", "science", "natural_dis
 const SIGNIFICANCES     = ["local", "regional", "national", "global"];
 
 // ── Main component ────────────────────────────────────────────────────────────
-export default function EventSpreadsheetPanel({
+export default function DataSpreadsheetPanel({
   events,
   notes = [],
   onImportEvents,

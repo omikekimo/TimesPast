@@ -22,16 +22,21 @@ export function fixLeafletIcons() {
 
 // ── Category colour map ───────────────────────────────────────────────────────
 // Single source of truth for pin colours by category.
-export const CATEGORY_COLORS = {
-  war:              '#dc2626',
-  politics:         '#7c3aed',
-  culture:          '#059669',
-  science:          '#2563eb',
-  natural_disaster: '#ea580c',
-  economics:        '#ca8a04',
-  religion:         '#9333ea',
-  exploration:      '#0891b2',
-  person:           '#f59e0b',
+export export const CATEGORY_COLORS = {
+  people:           '#f59e0b',
+  organisations:    '#f97316',
+  livingEntities:   '#84cc16',
+  artificialAgents: '#0ea5e9',
+  events:           '#3b82f6',
+  phenomena:        '#eab308',
+  conflicts:        '#ef4444',
+  places:           '#22c55e',
+  objects:          '#78716c',
+  technology:       '#6366f1',
+  works:            '#f43f5e',
+  concepts:         '#a855f7',
+  sciences:         '#14b8a6',
+  weather:          '#06b6d4',
 };
 
 // ── Create a custom Leaflet div icon ─────────────────────────────────────────

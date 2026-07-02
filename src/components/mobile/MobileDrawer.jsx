@@ -1,9 +1,9 @@
 import React from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { X, Users, Calendar, Search, Terminal, Info, Layers } from 'lucide-react';
-import SparqlSearchPanel from '../layers/SparqlSearchPanel';
+import PeopleSearch from '../layers/PeopleSearch';
 import CustomQueryPanel from '../layers/CustomQueryPanel';
-import EventSearchPanel from '../map/SearchPanel';
+import EventSearchPanel from '../layers/EventSearch';
 import LayerSwitcher from '../layers/LayerSwitcher';
 import AboutPanel from "../ui/AboutPanel";
 import SessionPanel from "../session/SessionPanel";

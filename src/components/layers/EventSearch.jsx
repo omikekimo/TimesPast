@@ -1,9 +1,9 @@
 import React, { useState } from "react";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
-import { Search, Filter, X, Loader2, Calendar, Grab } from "lucide-react";
-import { motion, AnimatePresence } from "framer-motion";
+
+import { Search, Loader2, Calendar, Grab } from "lucide-react";
+import { motion } from "framer-motion";
 import { resolveTextToEntities } from "@/lib/wikidataUtils";
 import DisambiguationList from "@/components/ui/DisambiguationList";
 
@@ -14,35 +14,13 @@ const STATE = {
   SEARCHING:      'searching',
 };
 
-const categories = [
-  { id: "war",              label: "War & Conflict",    color: "bg-red-100 text-red-800" },
-  { id: "politics",         label: "Politics",          color: "bg-purple-100 text-purple-800" },
-  { id: "culture",          label: "Culture",           color: "bg-green-100 text-green-800" },
-  { id: "science",          label: "Science",           color: "bg-blue-100 text-blue-800" },
-  { id: "natural_disaster", label: "Natural Disasters", color: "bg-orange-100 text-orange-800" },
-  { id: "economics",        label: "Economics",         color: "bg-yellow-100 text-yellow-800" },
-  { id: "religion",         label: "Religion",          color: "bg-indigo-100 text-indigo-800" },
-  { id: "exploration",      label: "Exploration",       color: "bg-cyan-100 text-cyan-800" },
-];
-
 export default function EventSearchPanel({
   onSearch,
   isSearching,
-  selectedCategories,
-  onCategoryChange,
 }) {
   const [query, setQuery]             = useState("");
-  const [showFilters, setShowFilters] = useState(false);
   const [panelState, setPanelState]   = useState(STATE.IDLE);
   const [candidates, setCandidates]   = useState([]);
-
-  const toggleCategory = (id) => {
-    onCategoryChange(
-      selectedCategories.includes(id)
-        ? selectedCategories.filter(c => c !== id)
-        : [...selectedCategories, id]
-    );
-  };
 
   // Step 1 — resolve text to candidates
   const handleSubmit = async (e) => {
@@ -82,14 +60,7 @@ export default function EventSearchPanel({
               <Calendar className="w-5 h-5 text-gray-700 dark:text-gray-200" />
               <h3 className="font-bold text-lg text-gray-900 dark:text-gray-100">Search Events</h3>
             </div>
-            <div className="flex items-center">
-              <Button variant="ghost" size="icon"
-                onClick={() => setShowFilters(!showFilters)}
-                className="text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200">
-                <Filter className="w-4 h-4" />
-              </Button>
-              <Grab className="w-4 h-4 text-gray-400 ml-2" />
-            </div>
+              <Grab className="w-4 h-4 text-gray-400" />
           </div>
         </CardHeader>
 
@@ -143,50 +114,11 @@ export default function EventSearchPanel({
             </div>
           )}
 
-          {/* ── Category filters (for filtering existing map events) ── */}
-          <AnimatePresence>
-            {showFilters && (
-              <motion.div
-                initial={{ opacity: 0, height: 0 }}
-                animate={{ opacity: 1, height: "auto" }}
-                exit={{ opacity: 0, height: 0 }}
-                className="space-y-3"
-              >
-                <div className="flex items-center justify-between border-t pt-3">
-                  <span className="text-sm font-medium text-gray-700">
-                    Filter visible events by category
-                  </span>
-                  {selectedCategories.length > 0 && (
-                    <Button variant="ghost" size="sm" onClick={() => onCategoryChange([])}
-                      className="text-xs text-gray-500 hover:text-gray-700">
-                      <X className="w-3 h-3 mr-1" /> Clear
-                    </Button>
-                  )}
-                </div>
-                <div className="flex flex-wrap gap-2">
-                  {categories.map(cat => (
-                    <Badge
-                      key={cat.id}
-                      variant={selectedCategories.includes(cat.id) ? "default" : "outline"}
-                      className={`cursor-pointer transition-all duration-200 hover:scale-105 ${
-                        selectedCategories.includes(cat.id) ? cat.color : "hover:bg-gray-100"
-                      }`}
-                      onClick={() => toggleCategory(cat.id)}
-                    >
-                      {cat.label}
-                    </Badge>
-                  ))}
-                </div>
-                <p className="text-[10px] text-gray-400">
-                  Category filters apply to all events already on the map.
-                  Use the search above to find and add new events from Wikidata.
-                </p>
-              </motion.div>
-            )}
-          </AnimatePresence>
+
 
         </CardContent>
       </Card>
     </motion.div>
   );
 }
+
