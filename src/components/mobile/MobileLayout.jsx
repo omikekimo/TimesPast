@@ -8,8 +8,8 @@ import 'leaflet/dist/leaflet.css';
 import MobileDrawer from './MobileDrawer';
 import MobileBottomSheet, { SHEET_SIZES } from './MobileBottomSheet';
 import DataTimelineControls from '../map/DataTimelineControls';
-import EventDetails from '../map/DataDetails';
-import EventComparison from '../map/DataComparison';
+import DataDetails from '../map/DataDetails';
+import DataComparison from '../map/DataComparison';
 import AddPinForm from '../map/AddPinForm';
 import ConsolePanel from '../console/ConsolePanel';
 import AboutPanel from '../ui/AboutPanel';
@@ -34,12 +34,11 @@ const SHEETS = { NONE: null, TIMELINE: 'timeline', ADD_PIN: 'addpin', EVENT: 'ev
 
 export default function MobileLayout({
   // All state and handlers from Map.jsx passed as props
-  filteredEvents, events, hiddenEventIds, lockedEventIds,
+ filteredEvents, events, notes, hiddenEventIds, lockedEventIds,
   selectedEvent, setSelectedEvent,
   comparisonEvents, addToComparison, removeFromComparison, setComparisonEvents,
   timeRange, setTimeRange,
   activeLayers, setActiveLayers,
-  selectedCategories, setSelectedCategories,
   isSearching,
   pickingLocation, setPickingLocation,
   groups, setGroups,
@@ -49,7 +48,7 @@ export default function MobileLayout({
   handleToggleVisible, handleToggleLock, handleEditEvent,
   handleDeleteEvent, handleClearAllPins, handleCreateGroup,
   handleNavigate, handleRenameGroup,
-  onAddPin, onImportEvents,
+  onAddPin, onImportEvents, onImportNotes,
   onSwitchToDesktop,
 }) {
   const [drawerOpen, setDrawerOpen] = useState(false);
@@ -189,8 +188,7 @@ export default function MobileLayout({
         onCustomQuery={handleCustomQuery}
         onEventSearch={handleEventSearch}
         isSearching={isSearching}
-        selectedCategories={selectedCategories}
-        onCategoryChange={setSelectedCategories}
+
         onToggleConsole={toggleConsole}
         onToggleAbout={toggleAbout}
         onToggleSession={toggleSession}
