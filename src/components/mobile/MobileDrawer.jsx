@@ -85,7 +85,7 @@ export default function MobileDrawer({
             {/* People search */}
             {activeLayers.includes('people') && (
               <DrawerSection title="People Search">
-                <SparqlSearchPanel
+                <PeopleSearch
                   onSearch={onSparqlSearch}
                   isSearching={isSearching}
                 />
