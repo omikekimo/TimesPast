@@ -53,7 +53,7 @@ export function useMapHandlers({
   setSelectedEvent,
   setActiveLayers,
   setTimeRange,
-  setSelectedCategories,
+
   setSearchQuery,
   setPickingLocation,
   setIsSearching,
@@ -177,10 +177,10 @@ export function useMapHandlers({
   const handleLoadSession = useCallback((sessionData) => {
     if (sessionData.activeLayers)       setActiveLayers(sessionData.activeLayers);
     if (sessionData.timeRange)          setTimeRange(sessionData.timeRange);
-    if (sessionData.selectedCategories) setSelectedCategories(sessionData.selectedCategories);
+
     if (sessionData.searchQuery)        setSearchQuery(sessionData.searchQuery);
     con?.log(`[session] loaded: "${sessionData.name || 'unnamed'}"`);
-  }, [setActiveLayers, setTimeRange, setSelectedCategories, setSearchQuery, con]);
+  }, [setActiveLayers, setTimeRange, setSearchQuery, con]);
 
   const handleSaveSession = useCallback((sessionData) => {
     con?.log(`[session] saved: "${sessionData.name}"`);
@@ -189,12 +189,12 @@ export function useMapHandlers({
   const handleClearSession = useCallback(() => {
     setActiveLayers(['people']);
     setTimeRange({ start: -3000, end: new Date().getFullYear() });
-    setSelectedCategories([]);
+
     setSearchQuery('');
     setComparisonEvents([]);
     setSelectedEvent(null);
     con?.log('[session] cleared');
-  }, [setActiveLayers, setTimeRange, setSelectedCategories, setSearchQuery,
+  }, [setActiveLayers, setTimeRange, setSearchQuery,
       setComparisonEvents, setSelectedEvent, con]);
 
   const handleExportData = useCallback((filteredEvents, sessionInfo) => {
@@ -258,7 +258,7 @@ export function useMapHandlers({
         title:        r.title, year, date: parsedDate,
         latitude:     parseFloat(r.latitude)  || 0,
         longitude:    parseFloat(r.longitude) || 0,
-        category:     r.category?.toLowerCase().replace(' ', '_') || 'culture',
+        category:     r.category?.toLowerCase().replace(' ', '_') || 'events',
         significance: r.significance?.toLowerCase() || 'local',
         description:  r.description  || '',
         wikipedia_url: r.wikipedia_url || '',
@@ -318,7 +318,6 @@ export function useMapHandlers({
         }`;
 
       propDefs.forEach(prop => {
-        if (!properties.includes(prop.id)) return;
         selectClause += ` ?${prop.sparqlVar}`;
         if (prop.placeVar) selectClause += ` ?${prop.placeVar}Label ?${prop.placeVar}Coords`;
         whereClause += `
@@ -346,7 +345,7 @@ export function useMapHandlers({
       const newEvents = [];
 
       propDefs.forEach(prop => {
-        if (!properties.includes(prop.id) || !row[prop.sparqlVar]) return;
+        if (!row[prop.sparqlVar]) return;
         const datePart = parseSparqlDate(row[prop.sparqlVar].value);
         const year     = datePartToYear(datePart);
         if (!year) return;
@@ -367,7 +366,7 @@ export function useMapHandlers({
           description:  `${prop.label} of ${personName}${prop.placeVar ? ` in ${locationDescription}` : ''}.`,
           year, date: { start: datePart, end: null },
           latitude, longitude,
-          category: 'person', significance: 'global',
+          category: 'people', significance: 'global',
           source: 'Wikidata SPARQL', wikipedia_url: wikipediaUrl,
           search_group: groupId, search_color: groupColor, search_query: searchTerm.trim(),
         });
@@ -532,7 +531,7 @@ if (imageUrl) {
     const basePin = {
       latitude:      lat  ?? 0,
       longitude:     lng  ?? 0,
-      category:      'culture',   // sensible default — user can edit
+      category:      'events',
       significance:  'global',
       source:        'Wikidata Events',
       search_group:  groupId,

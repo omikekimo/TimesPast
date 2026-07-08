@@ -48,7 +48,7 @@ export function createCustomIcon(category, significance, isHovered = false, over
   const color    = overrideColor || CATEGORY_COLORS[category] || '#6b7280';
   const baseSize = significance === 'global' ? 30 : significance === 'national' ? 25 : 20;
   const size     = isHovered ? Math.round(baseSize * 1.6) : baseSize;
-  const label    = category === 'person' ? 'P' : (category?.charAt(0).toUpperCase() || '?');
+  const label    = category?.charAt(0).toUpperCase() || '?';
 
   return L.divIcon({
     className: 'custom-marker',

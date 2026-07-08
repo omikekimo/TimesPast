@@ -1,12 +1,12 @@
 import React, { useState, useEffect, useCallback, useContext, useRef } from "react";
 import { MapContainer, TileLayer, Marker, Popup, Polyline, useMap, useMapEvents } from "react-leaflet";
-import { InvokeLLM } from "@/integrations/Core";
+
 import "leaflet/dist/leaflet.css";
 import L from "leaflet";
 import { Smartphone } from "lucide-react";
 import { MapPageContext } from "../components/context/MapPageContext";
 import { LayoutContext } from "../components/context/LayoutContext";
-import { nextGroupColor } from "../lib/searchGroups";
+
 import { parseSparqlDate, datePartToYear, formatPinDate, migrateLegacyPin, csvStringToDate } from "@/lib/dateUtils";
 import { fixLeafletIcons, createCustomIcon, createNoteIcon, spreadStackedMarkers, MapResizer, MapClickHandler, CATEGORY_COLORS } from '@/lib/mapUtils';
 import { ConsoleProvider, useConsole } from "../components/console/ConsoleContext";
@@ -26,7 +26,7 @@ import ConsolePanel from "../components/console/ConsolePanel";
 import AboutPanel from "../components/ui/AboutPanel";
 import MobileLayout from '../components/mobile/MobileLayout';
 import SessionPanel from '../components/session/SessionPanel';
-import {fetchEntityProperties, resolveBinding, resolvedToPin, resolveWikipediaUrl } from '@/lib/wikidataUtils';
+
 import QueryResultsViewer from '../components/ui/QueryResultsViewer';
 import ImageViewer from '../components/ui/ImageViewer';
 
@@ -154,7 +154,7 @@ const handleImportNotes = (importedNotes) => {
       const matchesSearch = !searchQuery ||
         event.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
         event.description?.toLowerCase().includes(searchQuery.toLowerCase());
-      return withinTimeRange && matchesCategory && matchesSearch;
+      return withinTimeRange && matchesSearch;
     });
     setFilteredEvents(filtered);
   };
@@ -217,7 +217,7 @@ const handleImportNotes = (importedNotes) => {
       <MapPageContext.Provider value={{ currentView, setCurrentView }}>
         <MobileLayout
           {...sharedProps}
-          onSwitchToDesktop={() => switchLayout('desktop')}
+          onSwitchToDesktop={() => handlers.switchLayout('desktop')}
         />
       </MapPageContext.Provider>
     );
@@ -420,7 +420,7 @@ const handleImportNotes = (importedNotes) => {
 
         {selectedEvent && (
           <DraggablePanel initialPosition={{ x: window.innerWidth - 420, y: 80 }} dragHandleClassName="drag-handle">
-            <EventDetails
+            <DataDetails
               event={selectedEvent} allEvents={filteredEvents}
               onClose={() => setSelectedEvent(null)}
               onAddToComparison={handlers.addToComparison}
@@ -431,7 +431,7 @@ const handleImportNotes = (importedNotes) => {
 
         {comparisonEvents.length > 0 && (
           <DraggablePanel initialPosition={{ x: window.innerWidth - 420, y: window.innerHeight - 350 }} dragHandleClassName="drag-handle">
-            <EventComparison
+            <DataComparison
               events={comparisonEvents}
               onRemoveEvent={handlers.removeFromComparison}
               onClearAll={() => setComparisonEvents([])}
@@ -464,7 +464,7 @@ const handleImportNotes = (importedNotes) => {
 
         {/* Layout toggle button */}
         <button
-          onClick={() => switchLayout('mobile')}
+          onClick={() => handlers.switchLayout('mobile')}
           className="absolute top-4 right-4 z-[700] bg-white rounded-full shadow-lg p-2 border border-gray-200"
           title="Switch to mobile layout"
         >
