@@ -11,35 +11,35 @@ const sections = [
     label: 'Agents',
     layers: [
       { id: 'people',           label: 'People',            icon: Users,    color: 'bg-amber-100 text-amber-800' },
-      { id: 'organisations',    label: 'Organisations',     icon: Building2,color: 'bg-orange-100 text-orange-800', disabled: true },
-      { id: 'livingEntities',   label: 'Living Entities',   icon: Leaf,     color: 'bg-lime-100 text-lime-800',     disabled: true },
-      { id: 'artificialAgents', label: 'Artificial Agents', icon: Bot,      color: 'bg-sky-100 text-sky-800',       disabled: true },
+      { id: 'organisations',    label: 'Organisations',     icon: Building2,color: 'bg-orange-100 text-orange-800', disabled: false },
+      { id: 'livingEntities',   label: 'Living Entities',   icon: Leaf,     color: 'bg-lime-100 text-lime-800',     disabled: false },
+      { id: 'artificialAgents', label: 'Artificial Agents', icon: Bot,      color: 'bg-sky-100 text-sky-800',       disabled: false },
     ],
   },
   {
     label: 'Occurrences',
     layers: [
       { id: 'events',        label: 'Events',           icon: Calendar,    color: 'bg-blue-100 text-blue-800' },
-      { id: 'phenomena',     label: 'Phenomena',        icon: Zap,         color: 'bg-yellow-100 text-yellow-800', disabled: true },
-      { id: 'weather',       label: 'Weather',          icon: Cloud,       color: 'bg-cyan-100 text-cyan-800',     disabled: true },
-      { id: 'conflicts',     label: 'Conflicts',        icon: Swords,      color: 'bg-red-100 text-red-800',       disabled: true },
+      { id: 'phenomena',     label: 'Phenomena',        icon: Zap,         color: 'bg-yellow-100 text-yellow-800', disabled: false },
+      { id: 'weather',       label: 'Weather',          icon: Cloud,       color: 'bg-cyan-100 text-cyan-800',     disabled: false },
+      { id: 'conflicts',     label: 'Conflicts',        icon: Swords,      color: 'bg-red-100 text-red-800',       disabled: false },
     ],
   },
   {
     label: 'Entities',
     layers: [
-      { id: 'places',        label: 'Places',           icon: Map,         color: 'bg-green-100 text-green-800',   disabled: true },
-      { id: 'objects',       label: 'Objects',          icon: Boxes,       color: 'bg-stone-100 text-stone-800',   disabled: true },
-      { id: 'technology',    label: 'Technology',       icon: Cpu,         color: 'bg-indigo-100 text-indigo-800', disabled: true },
-      { id: 'works',         label: 'Works',            icon: BookOpen,    color: 'bg-rose-100 text-rose-800',     disabled: true },
+      { id: 'places',        label: 'Places',           icon: Map,         color: 'bg-green-100 text-green-800',   disabled: false },
+      { id: 'objects',       label: 'Objects',          icon: Boxes,       color: 'bg-stone-100 text-stone-800',   disabled: false },
+      { id: 'technology',    label: 'Technology',       icon: Cpu,         color: 'bg-indigo-100 text-indigo-800', disabled: false },
+      { id: 'works',         label: 'Works',            icon: BookOpen,    color: 'bg-rose-100 text-rose-800',     disabled: false },
     ],
   },
   {
     label: 'Abstractions',
     layers: [
       { id: 'customQueries', label: 'Custom Queries',   icon: Search,      color: 'bg-violet-100 text-violet-800' },
-      { id: 'concepts',      label: 'Concepts & Ideas', icon: Lightbulb,   color: 'bg-purple-100 text-purple-800', disabled: true },
-      { id: 'sciences',      label: 'Sciences',         icon: FlaskConical,color: 'bg-teal-100 text-teal-800',     disabled: true },
+      { id: 'concepts',      label: 'Concepts & Ideas', icon: Lightbulb,   color: 'bg-purple-100 text-purple-800', disabled: false },
+      { id: 'sciences',      label: 'Sciences',         icon: FlaskConical,color: 'bg-teal-100 text-teal-800',     disabled: false },
     ],
   },
   {
