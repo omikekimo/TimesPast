@@ -30,6 +30,9 @@ import SessionPanel from '../components/session/SessionPanel';
 import QueryResultsViewer from '../components/ui/QueryResultsViewer';
 import ImageViewer from '../components/ui/ImageViewer';
 
+import MapOptions from "../components/layers/MapOptions";
+import { DEFAULT_TILE_ID, getTileProvider } from "../lib/mapConfig";
+
 // Fix for default markers in react-leaflet
 fixLeafletIcons();
 
@@ -68,6 +71,15 @@ function MapPageInner() {
   const [groups, setGroups] = useState([]);
   const [queryResults, setQueryResults] = useState(null);
   const [notes, setNotes] = useState([]);
+    const [selectedTileId, setSelectedTileId] = useState(() => {
+    return localStorage.getItem('timespast_tile') || DEFAULT_TILE_ID;
+  });
+
+  const handleTileChange = (id) => {
+    setSelectedTileId(id);
+    localStorage.setItem('timespast_tile', id);
+  };
+
   const markerRefs = useRef({});
   const layoutContext = useContext(LayoutContext);
   const setSidebarControls = layoutContext?.setSidebarControls;
@@ -190,6 +202,9 @@ const handleImportNotes = (importedNotes) => {
     timeRange, setTimeRange,
     activeLayers, setActiveLayers,
 
+        selectedTileId,
+    onTileChange: handleTileChange,
+
     isSearching,
     pickingLocation, setPickingLocation,
     groups, setGroups,
@@ -258,6 +273,12 @@ const handleImportNotes = (importedNotes) => {
           </DraggablePanel>
         )}
 
+                {activeLayers.includes('mapOptions') && (
+          <DraggablePanel initialPosition={{ x: 24, y: 300 }} dragHandleClassName="drag-handle">
+            <MapOptions selectedTileId={selectedTileId} onTileChange={handleTileChange} />
+          </DraggablePanel>
+        )}
+
         {activeLayers.includes('session') && (
         <DraggablePanel initialPosition={{ x: window.innerWidth - 420, y: 24 }} dragHandleClassName="drag-handle">
           <SessionPanel {...sessionControlHandlers} />
@@ -298,9 +319,11 @@ const handleImportNotes = (importedNotes) => {
               picking={pickingLocation.active}
               onPick={(latlng) => setPickingLocation({ active: false, lat: latlng.lat, lng: latlng.lng })}
             />
-            <TileLayer
-              url="https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png"
-              attribution='&copy; <a href="https://carto.com/">CARTO</a>'
+              <TileLayer
+              key={selectedTileId}
+              url={getTileProvider(selectedTileId).url}
+              attribution={getTileProvider(selectedTileId).attribution}
+              maxZoom={getTileProvider(selectedTileId).maxZoom}
             />
 
             {/* Note markers — square icons offset below parent pin */}

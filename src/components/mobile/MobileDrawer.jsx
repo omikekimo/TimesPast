@@ -7,6 +7,7 @@ import EventSearchPanel from '../layers/EventSearch';
 import LayerSwitcher from '../layers/LayerSwitcher';
 import AboutPanel from "../ui/AboutPanel";
 import SessionPanel from "../session/SessionPanel";
+import MapOptions from '../layers/MapOptions';
 
 // Section separator
 function DrawerSection({ title, children }) {
@@ -32,6 +33,9 @@ export default function MobileDrawer({
   // Layer state
   activeLayers,
   onLayerToggle,
+  //map
+  selectedTileId,
+  onTileChange,
   // Search handlers
   onSparqlSearch,
   onCustomQuery,
@@ -120,6 +124,13 @@ export default function MobileDrawer({
                 <SessionPanel
 
                 />
+              </DrawerSection>
+            )}
+
+            {/* map options */}
+              {activeLayers.includes('mapOptions') && (
+              <DrawerSection title="Map Options">
+                <MapOptions selectedTileId={selectedTileId} onTileChange={onTileChange} />
               </DrawerSection>
             )}
 

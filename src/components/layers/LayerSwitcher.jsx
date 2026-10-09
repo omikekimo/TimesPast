@@ -2,7 +2,7 @@ import React from 'react';
 import { Switch } from "@/components/ui/switch";
 import {
   Users, Calendar, Map, Cloud, Grab, Search, Terminal, Info, FolderOpen,
-  Boxes, Zap, BookOpen, Lightbulb, Swords, Building2, Leaf, Cpu, FlaskConical, Bot,
+  Boxes, Zap, BookOpen, Lightbulb, Swords, Building2, Leaf, Cpu, FlaskConical, Bot, SlidersHorizontal
 } from "lucide-react";
 
 // ── Section definitions ───────────────────────────────────────────────────────
@@ -40,6 +40,12 @@ const sections = [
       { id: 'customQueries', label: 'Custom Queries',   icon: Search,      color: 'bg-violet-100 text-violet-800' },
       { id: 'concepts',      label: 'Concepts & Ideas', icon: Lightbulb,   color: 'bg-purple-100 text-purple-800', disabled: false },
       { id: 'sciences',      label: 'Sciences',         icon: FlaskConical,color: 'bg-teal-100 text-teal-800',     disabled: false },
+    ],
+  },
+    {
+    label: 'Map Options',
+    layers: [
+      { id: 'mapOptions', label: 'Map Options', icon: SlidersHorizontal, color: 'bg-slate-100 text-slate-800' },
     ],
   },
   {
