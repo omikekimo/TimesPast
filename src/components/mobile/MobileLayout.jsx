@@ -18,6 +18,7 @@ import { fixLeafletIcons, createCustomIcon, spreadStackedMarkers, MapResizer, Ma
 import { ZoomControl } from 'react-leaflet';
 import MobileTopSheet from './MobileTopSheet';
 import SessionPanel from '../session/SessionPanel';
+import { getTileProvider } from '@/lib/mapConfig';
 
 // ── Leaflet helpers (same as desktop) ───────────────────────────────────────
 fixLeafletIcons();
@@ -49,6 +50,7 @@ export default function MobileLayout({
   handleDeleteEvent, handleClearAllPins, handleCreateGroup,
   handleNavigate, handleRenameGroup,
   onAddPin, onImportEvents, onImportNotes,
+   selectedTileId, onTileChange,
   onSwitchToDesktop,
 }) {
   const [drawerOpen, setDrawerOpen] = useState(false);
@@ -89,8 +91,10 @@ export default function MobileLayout({
         />
         <ZoomControl position="bottomright" />
         <TileLayer
-          url="https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png"
-          attribution='&copy; <a href="https://carto.com/">CARTO</a>'
+          key={selectedTileId}
+          url={getTileProvider(selectedTileId).url}
+          attribution={getTileProvider(selectedTileId).attribution}
+          maxZoom={getTileProvider(selectedTileId).maxZoom}
         />
 
         {/* Polylines */}
@@ -188,7 +192,8 @@ export default function MobileLayout({
         onCustomQuery={handleCustomQuery}
         onEventSearch={handleEventSearch}
         isSearching={isSearching}
-
+        selectedTileId={selectedTileId}
+        onTileChange={onTileChange}
         onToggleConsole={toggleConsole}
         onToggleAbout={toggleAbout}
         onToggleSession={toggleSession}
