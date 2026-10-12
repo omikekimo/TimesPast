@@ -5,27 +5,39 @@ import DatePartPicker from "@/components/ui/DatePartPicker";
 import { blankDatePart, datePartToYear, PRECISION } from "@/lib/dateUtils";
 
 const PIN_TYPES = [
-  { value: "event",         label: "Event" },
-  { value: "person",        label: "Person" },
-  { value: "place",         label: "Place" },
-  { value: "object",        label: "Object" },
-  { value: "weather_event", label: "Weather Event" },
+  { value: "events",           label: "Event" },
+  { value: "people",           label: "Person" },
+  { value: "organisations",    label: "Organisation" },
+  { value: "livingEntities",   label: "Living Entity" },
+  { value: "artificialAgents", label: "Artificial Agent" },
+  { value: "places",           label: "Place" },
+  { value: "objects",          label: "Object" },
+  { value: "works",            label: "Work" },
+  { value: "conflicts",        label: "Conflict" },
+  { value: "phenomena",        label: "Phenomenon" },
+  { value: "weather",          label: "Weather Event" },
 ];
 
 const CATEGORIES_BY_TYPE = {
-  event:         ["war", "politics", "culture", "science", "natural_disaster", "economics", "religion", "exploration"],
-  person:        ["person"],
-  place:         ["culture", "religion", "politics", "exploration"],
-  object:        ["science", "culture", "economics", "religion"],
-  weather_event: ["natural_disaster"],
+  events:           ["events"],
+  people:           ["people"],
+  organisations:    ["organisations"],
+  livingEntities:   ["livingEntities"],
+  artificialAgents: ["artificialAgents"],
+  places:           ["places"],
+  objects:          ["objects"],
+  works:            ["works"],
+  conflicts:        ["conflicts"],
+  phenomena:        ["phenomena"],
+  weather:          ["weather"],
 };
 
 const SIGNIFICANCES = ["local", "regional", "national", "global"];
 
 const emptyPin = () => ({
-  pinType:      "event",
+  pinType:      "events",
   title:        "",
-  category:     "culture",
+  category:     "events",
   significance: "local",
   description:  "",
   latitude:     "",
@@ -40,11 +52,16 @@ const emptyDate = () => ({
 // Labels for start/end date fields per pin type
 function dateLabelConfig(pinType) {
   switch (pinType) {
-    case "person":       return { start: "Date of Birth", end: "Date of Death" };
-    case "place":        return { start: "Founded / Established", end: "Dissolved / Abandoned" };
-    case "object":       return { start: "Created", end: "Destroyed / Lost" };
-    case "weather_event":return { start: "Start Date", end: "End Date" };
-    default:             return { start: "Date", end: "End Date (if range)" };
+    case "people":           return { start: "Date of Birth",         end: "Date of Death",       noEndDate: false };
+    case "organisations":    return { start: "Founded",               end: "Dissolved",            noEndDate: false };
+    case "livingEntities":   return { start: "First Observed",        end: "Extinct",              noEndDate: false };
+    case "artificialAgents": return { start: "First Deployed",        end: "Decommissioned",       noEndDate: false };
+    case "places":           return { start: "Founded / Established", end: "Dissolved / Abandoned",noEndDate: false };
+    case "objects":          return { start: "Created",               end: "Destroyed / Lost",     noEndDate: false };
+    case "works":            return { start: "Created / Published",   end: null,                   noEndDate: true  };
+    case "weather":          return { start: "Start Date",            end: "End Date",             noEndDate: false };
+    case "conflicts":        return { start: "Start Date",            end: "End Date",             noEndDate: false };
+    default:                 return { start: "Date",                  end: "End Date (if range)",  noEndDate: false };
   }
 }
 
@@ -61,10 +78,11 @@ export default function AddPinForm({ onAdd, pickingLocation, onStartPickLocation
 
   const handleTypeChange = (type) => {
     const cats = CATEGORIES_BY_TYPE[type];
+    const labels = dateLabelConfig(type);
     set("pinType", type);
     set("category", cats[0]);
-    // People always show end date (death)
-    setShowEndDate(type === "person");
+    setShowEndDate(type === "people" || type === "organisations" || type === "livingEntities" || type === "artificialAgents");
+    if (labels.noEndDate) setShowEndDate(false);
   };
 
   useEffect(() => {
@@ -89,11 +107,7 @@ export default function AddPinForm({ onAdd, pickingLocation, onStartPickLocation
     setError(null);
     setSaving(true);
 
-    const category = pin.pinType === "person"
-      ? "person"
-      : pin.pinType === "weather_event"
-      ? "natural_disaster"
-      : pin.category;
+    const category = pin.category;
 
     const group = groups.find(g => g.id === selectedGroupId);
 
@@ -180,26 +194,28 @@ export default function AddPinForm({ onAdd, pickingLocation, onStartPickLocation
         />
       </div>
 
-      {/* End date toggle + picker */}
-      <div className="border border-gray-200 rounded-lg p-2 space-y-1.5 bg-gray-50">
-        <div className="flex items-center justify-between">
-          <span className="text-[10px] font-semibold text-gray-500 uppercase tracking-wider">
-            {dateLabels.end}
-          </span>
-          <label className="flex items-center gap-1 text-[10px] text-gray-500 cursor-pointer">
-            <input type="checkbox" checked={showEndDate}
-              onChange={e => setShowEndDate(e.target.checked)}
-              className="accent-blue-500 w-3 h-3" />
-            Include
-          </label>
+            {/* End date toggle + picker — hidden entirely for types with no end date concept */}
+      {!dateLabels.noEndDate && (
+        <div className="border border-gray-200 rounded-lg p-2 space-y-1.5 bg-gray-50">
+          <div className="flex items-center justify-between">
+            <span className="text-[10px] font-semibold text-gray-500 uppercase tracking-wider">
+              {dateLabels.end}
+            </span>
+            <label className="flex items-center gap-1 text-[10px] text-gray-500 cursor-pointer">
+              <input type="checkbox" checked={showEndDate}
+                onChange={e => setShowEndDate(e.target.checked)}
+                className="accent-blue-500 w-3 h-3" />
+              Include
+            </label>
+          </div>
+          {showEndDate && (
+            <DatePartPicker
+              value={date.end}
+              onChange={v => setDate(d => ({ ...d, end: v }))}
+            />
+          )}
         </div>
-        {showEndDate && (
-          <DatePartPicker
-            value={date.end}
-            onChange={v => setDate(d => ({ ...d, end: v }))}
-          />
-        )}
-      </div>
+      )}
 
       {/* Location */}
       <div>
@@ -225,7 +241,8 @@ export default function AddPinForm({ onAdd, pickingLocation, onStartPickLocation
       </div>
 
       {/* Category / significance */}
-      {pin.pinType !== "person" && pin.pinType !== "weather_event" && (
+            {pin.pinType !== "people" && pin.pinType !== "weather" && pin.pinType !== "works" &&
+       pin.pinType !== "organisations" && pin.pinType !== "livingEntities" && pin.pinType !== "artificialAgents" && (
         <div className="flex gap-2">
           <div className="flex-1">
             <label className="text-[10px] text-gray-500 mb-0.5 block">Category</label>
@@ -244,7 +261,7 @@ export default function AddPinForm({ onAdd, pickingLocation, onStartPickLocation
         </div>
       )}
 
-      {pin.pinType === "weather_event" && (
+      {pin.pinType === "weather" && (
         <div>
           <label className="text-[10px] text-gray-500 mb-0.5 block">Significance</label>
           <select className="w-full border rounded px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-blue-400 bg-white"
