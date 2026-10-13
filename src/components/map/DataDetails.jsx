@@ -1,30 +1,14 @@
 import React, { useState } from "react";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
-import { X, ExternalLink, Calendar, MapPin, Plus, Grab, ChevronLeft, ChevronRight, Link, Unlink, Search, Maximize2 } from "lucide-react";
+
+import { X, ExternalLink, Calendar, MapPin, Plus, Grab, ChevronLeft, ChevronRight, Unlink, Maximize2, Pencil, BookmarkPlus } from "lucide-react";
 import { motion } from "framer-motion";
 import { formatPinDate, migrateLegacyPin } from "@/lib/dateUtils";
 import ImageViewer, { isImageUrl } from "@/components/ui/ImageViewer";
+import NoteConstructor from "@/components/ui/NoteConstructor";
 
-const categoryColors = {
-  war:              "bg-red-100 text-red-800",
-  politics:         "bg-purple-100 text-purple-800",
-  culture:          "bg-green-100 text-green-800",
-  science:          "bg-blue-100 text-blue-800",
-  natural_disaster: "bg-orange-100 text-orange-800",
-  economics:        "bg-yellow-100 text-yellow-800",
-  religion:         "bg-indigo-100 text-indigo-800",
-  exploration:      "bg-cyan-100 text-cyan-800",
-  person:           "bg-amber-100 text-amber-800",
-};
 
-const significanceColors = {
-  local:    "bg-gray-100 text-gray-800",
-  regional: "bg-blue-100 text-blue-800",
-  national: "bg-green-100 text-green-800",
-  global:   "bg-purple-100 text-purple-800",
-};
 
 // Migrate old wikipedia_url to links array
 function getLinks(event) {
@@ -40,10 +24,13 @@ export default function DataDetails({
   onAddToComparison,
   onNavigate,
   onEditEvent,
+  onSaveNote,
+  groups = [],
   className,
 }) {
-  const [showGroupEditor, setShowGroupEditor] = useState(false);
-  const [viewingImage, setViewingImage]       = useState(false);
+  const [showGroupEditor, setShowGroupEditor]         = useState(false);
+  const [viewingImage, setViewingImage]               = useState(false);
+  const [showNoteConstructor, setShowNoteConstructor] = useState(false);
 
   const migrated = migrateLegacyPin(event);
   const links    = getLinks(event);
@@ -77,18 +64,20 @@ export default function DataDetails({
               <h3 className="font-bold text-xl text-gray-900 dark:text-gray-100 leading-tight mb-2">
                 {event.title}
               </h3>
-              <div className="flex gap-2 flex-wrap">
-                <Badge className={categoryColors[event.category] || "bg-gray-100 text-gray-800"}>
-                  {event.category?.replace(/_/g, ' ')}
-                </Badge>
-                {event.significance && (
-                  <Badge className={significanceColors[event.significance]}>
-                    {event.significance} impact
-                  </Badge>
-                )}
+                           <div className="flex items-center gap-2 flex-wrap">
                 {event.search_color && (
-                  <span className="w-3 h-3 rounded-full self-center flex-shrink-0 border border-white shadow-sm"
+                  <span className="w-3 h-3 rounded-full flex-shrink-0 border border-white shadow-sm"
                     style={{ backgroundColor: event.search_color }} title="Timeline group" />
+                )}
+                {onEditEvent && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="text-xs h-7 px-2 gap-1"
+                    onClick={() => onEditEvent(event.id)}
+                  >
+                    <Pencil className="w-3 h-3" /> Edit
+                  </Button>
                 )}
               </div>
             </div>
@@ -256,25 +245,36 @@ export default function DataDetails({
             </div>
           )}
 
-          {/* ── Actions ── */}
+                   {/* ── Actions ── */}
           <div className="space-y-2 pt-2 border-t border-gray-100">
+            {onSaveNote && (
+              <Button
+
+                className="w-full border-blue-200 text-blue-600 hover:bg-blue-50"
+                onClick={() => setShowNoteConstructor(true)}
+                >
+                <BookmarkPlus className="w-4 h-4 mr-2" /> Add Note
+              </Button>
+            )}
             <Button onClick={() => onAddToComparison(event)} className="w-full bg-blue-600 hover:bg-blue-700 text-white">
               <Plus className="w-4 h-4 mr-2" /> Add to Comparison
             </Button>
           </div>
 
-          {/* ── Historical context ── */}
-          <div className="bg-gray-50 rounded-lg p-3">
-            <h4 className="font-semibold text-gray-900 mb-2 text-sm">Historical Context</h4>
-            <p className="text-xs text-gray-600">
-              This {event.significance}-level {event.category?.replace(/_/g, ' ')} event occurred in{" "}
-              {event.year < 0 ? `${Math.abs(event.year)} BCE` : `${event.year} CE`}, during the{" "}
-              {event.year < 500 ? "Ancient" : event.year < 1500 ? "Medieval" : event.year < 1800 ? "Renaissance" : event.year < 1950 ? "Industrial" : "Modern"} period.
-            </p>
-          </div>
-
         </CardContent>
       </Card>
+          {showNoteConstructor && (
+        <NoteConstructor
+          parentPin={event}
+          groups={groups}
+          availablePins={allEvents}
+          onSave={(noteData) => {
+            onSaveNote(noteData);
+            setShowNoteConstructor(false);
+          }}
+          onClose={() => setShowNoteConstructor(false)}
+        />
+      )}
     </motion.div>
   );
 }

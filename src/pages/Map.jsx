@@ -444,10 +444,15 @@ const handleImportNotes = (importedNotes) => {
         {selectedEvent && (
           <DraggablePanel initialPosition={{ x: window.innerWidth - 420, y: 80 }} dragHandleClassName="drag-handle">
             <DataDetails
-              event={selectedEvent} allEvents={filteredEvents}
+              event={selectedEvent}
+              allEvents={events}
               onClose={() => setSelectedEvent(null)}
               onAddToComparison={handlers.addToComparison}
-              onNavigate={handlers.handleNavigate} onEditEvent={handlers.handleEditEvent}
+              onNavigate={handlers.handleNavigate}
+              onEditEvent={handlers.handleEditEvent}
+              onSaveNote={handlers.handleSaveNote}
+              groups={groups}
+              className="..."
             />
           </DraggablePanel>
         )}
