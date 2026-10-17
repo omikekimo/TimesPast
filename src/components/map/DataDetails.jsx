@@ -24,6 +24,7 @@ export default function DataDetails({
   onAddToComparison,
   onNavigate,
   onEditEvent,
+  onOpenEdit,
   onSaveNote,
   groups = [],
   className,
@@ -69,16 +70,18 @@ export default function DataDetails({
                   <span className="w-3 h-3 rounded-full flex-shrink-0 border border-white shadow-sm"
                     style={{ backgroundColor: event.search_color }} title="Timeline group" />
                 )}
-                {onEditEvent && (
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    className="text-xs h-7 px-2 gap-1"
-                    onClick={() => onEditEvent(event.id)}
-                  >
-                    <Pencil className="w-3 h-3" /> Edit
-                  </Button>
-                )}
+
+                {onOpenEdit && (
+  <Button
+    variant="outline"
+    size="sm"
+    className="text-xs h-7 px-2 gap-1"
+    onClick={() => onOpenEdit(event)}
+  >
+    <Pencil className="w-3 h-3" /> Edit
+  </Button>
+)}
+
               </div>
             </div>
             <div className="flex items-center">

@@ -4,8 +4,11 @@ import { X, Save, Crosshair, Plus, Trash2 } from "lucide-react";
 import { blankDatePart, datePartToYear, yearToDatePart, migrateLegacyPin } from "@/lib/dateUtils";
 import DatePartPicker from "@/components/ui/DatePartPicker";
 
-const CATEGORIES    = ["war", "politics", "culture", "science", "natural_disaster", "economics", "religion", "exploration", "person"];
-const SIGNIFICANCES = ["local", "regional", "national", "global"];
+const CATEGORIES = [
+  "people", "events", "places", "organisations", "livingEntities",
+  "artificialAgents", "works", "objects", "technology", "conflicts",
+  "phenomena", "weather", "concepts", "sciences",
+];
 
 // Migrate old wikipedia_url to links array
 function getInitialLinks(event) {
@@ -22,7 +25,7 @@ export default function EditPinModal({ event, onSave, onClose, pickingLocation, 
     latitude:     migrated.latitude     ?? "",
     longitude:    migrated.longitude    ?? "",
     category:     migrated.category     ?? "culture",
-    significance: migrated.significance ?? "local",
+
     description:  migrated.description  ?? "",
     search_query: migrated.search_query ?? "",
   });
@@ -162,23 +165,14 @@ export default function EditPinModal({ event, onSave, onClose, pickingLocation, 
             </div>
           </div>
 
-          {/* Category + Significance */}
-          <div className="flex gap-2">
-            <div className="flex-1">
-              <label className="text-[10px] text-gray-500 block mb-0.5">Category</label>
-              <select className="w-full border rounded px-2 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-blue-400 bg-white"
-                value={form.category} onChange={e => set("category", e.target.value)}>
-                {CATEGORIES.map(c => <option key={c} value={c}>{c.replace(/_/g, " ")}</option>)}
-              </select>
-            </div>
-            <div className="flex-1">
-              <label className="text-[10px] text-gray-500 block mb-0.5">Significance</label>
-              <select className="w-full border rounded px-2 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-blue-400 bg-white"
-                value={form.significance} onChange={e => set("significance", e.target.value)}>
-                {SIGNIFICANCES.map(s => <option key={s} value={s}>{s}</option>)}
-              </select>
-            </div>
-          </div>
+        {/* Category */}
+<div>
+  <label className="text-[10px] text-gray-500 block mb-0.5">Category</label>
+  <select className="w-full border rounded px-2 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-blue-400 bg-white"
+    value={form.category} onChange={e => set("category", e.target.value)}>
+    {CATEGORIES.map(c => <option key={c} value={c}>{c.replace(/_/g, " ")}</option>)}
+  </select>
+</div>
 
           {/* Description */}
           <div>

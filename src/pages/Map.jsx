@@ -32,6 +32,7 @@ import ImageViewer from '../components/ui/ImageViewer';
 
 import MapOptions from "../components/layers/MapOptions";
 import { DEFAULT_TILE_ID, getTileProvider } from "../lib/mapConfig";
+import EditPinModal from "../components/map/EditPinModal";
 
 // Fix for default markers in react-leaflet
 fixLeafletIcons();
@@ -71,6 +72,7 @@ function MapPageInner() {
   const [groups, setGroups] = useState([]);
   const [queryResults, setQueryResults] = useState(null);
   const [notes, setNotes] = useState([]);
+  const [editingPin, setEditingPin] = useState(null);
     const [selectedTileId, setSelectedTileId] = useState(() => {
     return localStorage.getItem('timespast_tile') || DEFAULT_TILE_ID;
   });
@@ -450,12 +452,24 @@ const handleImportNotes = (importedNotes) => {
               onAddToComparison={handlers.addToComparison}
               onNavigate={handlers.handleNavigate}
               onEditEvent={handlers.handleEditEvent}
-              onSaveNote={handlers.handleSaveNote}
+              onOpenEdit={(pin) => setEditingPin(pin)}
+              onSaveNote={handleSaveNote}
               groups={groups}
               className="..."
             />
           </DraggablePanel>
         )}
+
+        {editingPin && (
+  <EditPinModal
+    event={editingPin}
+    groups={groups}
+    pickingLocation={pickingLocation}
+    onStartPickLocation={() => setPickingLocation({ active: true, lat: null, lng: null })}
+    onSave={(id, data) => { handlers.handleEditEvent(id, data); setEditingPin(null); }}
+    onClose={() => setEditingPin(null)}
+  />
+)}
 
         {comparisonEvents.length > 0 && (
           <DraggablePanel initialPosition={{ x: window.innerWidth - 420, y: window.innerHeight - 350 }} dragHandleClassName="drag-handle">
