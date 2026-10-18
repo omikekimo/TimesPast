@@ -504,6 +504,8 @@ const handleImportNotes = (importedNotes) => {
 />
 )}
 
+
+
         {activeLayers.includes('console') && (
           <DraggablePanel initialPosition={{ x: 100, y: window.innerHeight - 420 }} dragHandleClassName="drag-handle">
             <ConsolePanel />
