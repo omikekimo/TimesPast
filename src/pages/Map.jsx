@@ -33,6 +33,7 @@ import ImageViewer from '../components/ui/ImageViewer';
 import MapOptions from "../components/layers/MapOptions";
 import { DEFAULT_TILE_ID, getTileProvider } from "../lib/mapConfig";
 import EditPinModal from "../components/map/EditPinModal";
+import NoteConstructor from "../components/ui/NoteConstructor";
 
 // Fix for default markers in react-leaflet
 fixLeafletIcons();
@@ -73,6 +74,7 @@ function MapPageInner() {
   const [queryResults, setQueryResults] = useState(null);
   const [notes, setNotes] = useState([]);
   const [editingPin, setEditingPin] = useState(null);
+  const [noteTarget, setNoteTarget] = useState(null);
     const [selectedTileId, setSelectedTileId] = useState(() => {
     return localStorage.getItem('timespast_tile') || DEFAULT_TILE_ID;
   });
@@ -453,7 +455,7 @@ const handleImportNotes = (importedNotes) => {
               onNavigate={handlers.handleNavigate}
               onEditEvent={handlers.handleEditEvent}
               onOpenEdit={(pin) => setEditingPin(pin)}
-              onSaveNote={handleSaveNote}
+              onAddNote={(pin) => setNoteTarget(pin)}
               groups={groups}
               className="..."
             />
@@ -468,6 +470,16 @@ const handleImportNotes = (importedNotes) => {
     onStartPickLocation={() => setPickingLocation({ active: true, lat: null, lng: null })}
     onSave={(id, data) => { handlers.handleEditEvent(id, data); setEditingPin(null); }}
     onClose={() => setEditingPin(null)}
+  />
+)}
+
+        {noteTarget && (
+  <NoteConstructor
+    parentPin={noteTarget}
+    groups={groups}
+    availablePins={filteredEvents}
+    onSave={(noteData) => { handleSaveNote(noteData); setNoteTarget(null); }}
+    onClose={() => setNoteTarget(null)}
   />
 )}
 

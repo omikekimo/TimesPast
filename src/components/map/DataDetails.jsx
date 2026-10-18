@@ -6,7 +6,7 @@ import { X, ExternalLink, Calendar, MapPin, Plus, Grab, ChevronLeft, ChevronRigh
 import { motion } from "framer-motion";
 import { formatPinDate, migrateLegacyPin } from "@/lib/dateUtils";
 import ImageViewer, { isImageUrl } from "@/components/ui/ImageViewer";
-import NoteConstructor from "@/components/ui/NoteConstructor";
+
 
 
 
@@ -26,12 +26,12 @@ export default function DataDetails({
   onEditEvent,
   onOpenEdit,
   onSaveNote,
-  groups = [],
+
   className,
 }) {
   const [showGroupEditor, setShowGroupEditor]         = useState(false);
   const [viewingImage, setViewingImage]               = useState(false);
-  const [showNoteConstructor, setShowNoteConstructor] = useState(false);
+
 
   const migrated = migrateLegacyPin(event);
   const links    = getLinks(event);
@@ -250,15 +250,15 @@ export default function DataDetails({
 
                    {/* ── Actions ── */}
           <div className="space-y-2 pt-2 border-t border-gray-100">
-            {onSaveNote && (
-              <Button
-
-                className="w-full border-blue-200 text-blue-600 hover:bg-blue-50"
-                onClick={() => setShowNoteConstructor(true)}
-                >
-                <BookmarkPlus className="w-4 h-4 mr-2" /> Add Note
-              </Button>
-            )}
+            {onAddNote && (
+  <Button
+    variant="outline"
+    className="w-full border-blue-200 text-blue-600 hover:bg-blue-50"
+    onClick={() => onAddNote(event)}
+  >
+    <BookmarkPlus className="w-4 h-4 mr-2" /> Add Note
+  </Button>
+)}
             <Button onClick={() => onAddToComparison(event)} className="w-full bg-blue-600 hover:bg-blue-700 text-white">
               <Plus className="w-4 h-4 mr-2" /> Add to Comparison
             </Button>
@@ -266,18 +266,7 @@ export default function DataDetails({
 
         </CardContent>
       </Card>
-          {showNoteConstructor && (
-        <NoteConstructor
-          parentPin={event}
-          groups={groups}
-          availablePins={allEvents}
-          onSave={(noteData) => {
-            onSaveNote(noteData);
-            setShowNoteConstructor(false);
-          }}
-          onClose={() => setShowNoteConstructor(false)}
-        />
-      )}
+
     </motion.div>
   );
 }
