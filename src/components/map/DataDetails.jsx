@@ -25,7 +25,7 @@ export default function DataDetails({
   onNavigate,
   onEditEvent,
   onOpenEdit,
-  onSaveNote,
+  onAddNote,
 
   className,
 }) {
