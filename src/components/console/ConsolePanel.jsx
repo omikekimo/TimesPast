@@ -1,7 +1,7 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { useConsole, LEVELS } from './ConsoleContext';
 import { getCommand, getAllCommands } from './commands/index.js';
-import { Grab } from 'lucide-react';
+import { Grab, X } from 'lucide-react';
 
 const LEVEL_PREFIX = {
   [LEVELS.INFO]:    '›',
@@ -35,7 +35,7 @@ const SIZES = [
   { label: '14', value: '14px' },
 ];
 
-export default function ConsolePanel({ appState, setAppState }) {
+export default function ConsolePanel({ appState, setAppState, onClose }) {
   const con = useConsole();
 
   const [input, setInput]     = useState('');
@@ -157,7 +157,12 @@ export default function ConsolePanel({ appState, setAppState }) {
                 ↓ bottom
               </button>
             )}
-            <Grab className="w-4 h-4 text-gray-500" />
+            <div className="flex items-center gap-2">
+    <Grab className="w-4 h-4 text-gray-400" />
+    <button onClick={onClose} className="text-gray-400 hover:text-gray-600">
+      <X className="w-4 h-4" />
+    </button>
+  </div>
           </div>
         </div>
 

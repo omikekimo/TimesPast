@@ -272,7 +272,7 @@ const handleImportNotes = (importedNotes, freshEvents = []) => {
 
         {activeLayers.includes('about') && (
           <DraggablePanel initialPosition={{ x: window.innerWidth / 2 - 192, y: 80 }} dragHandleClassName="drag-handle">
-            <AboutPanel />
+            <AboutPanel onClose={() => setActiveLayers(prev => prev.filter(id => id !== 'about'))}  />
           </DraggablePanel>
         )}
 
@@ -314,7 +314,7 @@ const handleImportNotes = (importedNotes, freshEvents = []) => {
 
         {activeLayers.includes('session') && (
         <DraggablePanel initialPosition={{ x: window.innerWidth - 420, y: 24 }} dragHandleClassName="drag-handle">
-          <SessionPanel {...sessionControlHandlers} />
+          <SessionPanel {...sessionControlHandlers} onClose={() => setActiveLayers(prev => prev.filter(id => id !== 'session'))}/>
         </DraggablePanel>
         )}
 
@@ -548,7 +548,7 @@ const handleImportNotes = (importedNotes, freshEvents = []) => {
 
         {activeLayers.includes('console') && (
           <DraggablePanel initialPosition={{ x: 100, y: window.innerHeight - 420 }} dragHandleClassName="drag-handle">
-            <ConsolePanel />
+            <ConsolePanel onClose={() => setActiveLayers(prev => prev.filter(id => id !== 'console'))} />
           </DraggablePanel>
         )}
 

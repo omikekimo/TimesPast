@@ -4,7 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { motion } from "framer-motion";
 import {
-  Save, FolderOpen, Trash2, Download, Upload, Clock, Grab
+  Save, FolderOpen, Trash2, Download, Upload, Clock, Grab, X
 } from "lucide-react";
 
 export default function SessionPanel({
@@ -14,6 +14,7 @@ export default function SessionPanel({
   onExportData,
   onImportData,
   currentSessionInfo,
+  onClose,
 }) {
   const [sessionName, setSessionName]     = useState("");
   const [savedSessions, setSavedSessions] = useState([]);
@@ -55,7 +56,12 @@ export default function SessionPanel({
               <Clock className="w-5 h-5 text-gray-700 dark:text-gray-200" />
               <h3 className="font-bold text-lg text-gray-900 dark:text-gray-100">Session</h3>
             </div>
-            <Grab className="w-4 h-4 text-gray-400" />
+           <div className="flex items-center gap-2">
+    <Grab className="w-4 h-4 text-gray-400" />
+    <button onClick={onClose} className="text-gray-400 hover:text-gray-600">
+      <X className="w-4 h-4" />
+    </button>
+  </div>
           </div>
         </CardHeader>
 

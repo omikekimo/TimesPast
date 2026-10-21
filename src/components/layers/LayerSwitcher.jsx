@@ -55,7 +55,7 @@ const sections = [
     label: 'System',
     singleToggle: true,
     layers: [
-      { id: 'session',       label: 'Session',          icon: FolderOpen,  color: 'bg-emerald-100 text-emerald-800' },
+      { id: 'session',       label: 'Session',          icon: FolderOpen,  color: 'bg-emerald-100 text-emerald-800'},
       { id: 'console',       label: 'Console',          icon: Terminal,    color: 'bg-gray-700 text-green-300' },
       { id: 'about',         label: 'About',            icon: Info,        color: 'bg-gray-700 text-green-300' },
     ],

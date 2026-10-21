@@ -3,12 +3,12 @@ import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
-import { Search, Loader2, Users, Wand2, Grab, Info } from "lucide-react";
+import { Search, Loader2, Users, Wand2, Grab, Info, X } from "lucide-react";
 import { motion } from "framer-motion";
 
 
 
-export default function AboutPanel() {
+export default function AboutPanel({onClose}) {
 
   return (
     <motion.div
@@ -22,7 +22,12 @@ export default function AboutPanel() {
                 <Info className="w-5 h-5 text-gray-700 dark:text-gray-200" />
                 <h3 className="font-bold text-lg text-gray-900 dark:text-gray-100">Times Past</h3>
             </div>
-            <Grab className="w-4 h-4 text-gray-400" />
+            <div className="flex items-center gap-2">
+    <Grab className="w-4 h-4 text-gray-400" />
+    <button onClick={onClose} className="text-gray-400 hover:text-gray-600">
+      <X className="w-4 h-4" />
+    </button>
+  </div>
           </div>
         </CardHeader>
 
