@@ -30,6 +30,9 @@ function DrawerSection({ title, children }) {
 export default function MobileDrawer({
   open,
   onClose,
+  //Panels
+  openPanels,
+  onPanelToggle,
   // Layer state
   activeLayers,
   onLayerToggle,
@@ -83,7 +86,12 @@ export default function MobileDrawer({
 
             {/* Layers */}
             <DrawerSection title="Layers">
-              <LayerSwitcher activeLayers={activeLayers} onLayerToggle={onLayerToggle} />
+             <LayerSwitcher
+  activeLayers={activeLayers}
+  onLayerToggle={onLayerToggle}
+  openPanels={openPanels ?? []}
+  onPanelToggle={onPanelToggle ?? (() => {})}
+/>
             </DrawerSection>
 
             {/* People search */}

@@ -2,7 +2,7 @@ import React, { useState } from "react";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 
-import { Search, Loader2, Calendar, Grab } from "lucide-react";
+import { Search, Loader2, Calendar, Grab, X } from "lucide-react";
 import { motion } from "framer-motion";
 import { resolveTextToEntities } from "@/lib/wikidataUtils";
 import DisambiguationList from "@/components/ui/DisambiguationList";
@@ -17,6 +17,7 @@ const STATE = {
 export default function EventSearchPanel({
   onSearch,
   isSearching,
+  onClose,
 }) {
   const [query, setQuery]             = useState("");
   const [panelState, setPanelState]   = useState(STATE.IDLE);
@@ -60,7 +61,10 @@ export default function EventSearchPanel({
               <Calendar className="w-5 h-5 text-gray-700 dark:text-gray-200" />
               <h3 className="font-bold text-lg text-gray-900 dark:text-gray-100">Search Events</h3>
             </div>
+                          <div className="flex items-center gap-2">
               <Grab className="w-4 h-4 text-gray-400" />
+              {onClose && <button onClick={onClose} className="text-gray-400 hover:text-gray-600"><X className="w-4 h-4" /></button>}
+            </div>
           </div>
         </CardHeader>
 

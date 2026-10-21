@@ -1,12 +1,12 @@
 import React from 'react';
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
-import { Grab, Map, Check } from "lucide-react";
+import { Grab, Map, Check, X } from "lucide-react";
 import { motion } from "framer-motion";
 import { getTileProvidersByCategory } from "@/lib/mapConfig";
 
 const CATEGORY_ORDER = ['Street', 'Terrain', 'Satellite', 'Artistic'];
 
-export default function MapOptions({ selectedTileId, onTileChange }) {
+export default function MapOptions({ selectedTileId, onTileChange, onClose }) {
   const byCategory = getTileProvidersByCategory();
 
   return (
@@ -18,7 +18,12 @@ export default function MapOptions({ selectedTileId, onTileChange }) {
               <Map className="w-5 h-5 text-gray-700 dark:text-gray-200" />
               <h3 className="font-bold text-lg text-gray-900 dark:text-gray-100">Map Options</h3>
             </div>
-            <Grab className="w-4 h-4 text-gray-400" />
+            <div className="flex items-center gap-2">
+    <Grab className="w-4 h-4 text-gray-400" />
+    <button onClick={onClose} className="text-gray-400 hover:text-gray-600">
+      <X className="w-4 h-4" />
+    </button>
+  </div>
           </div>
         </CardHeader>
 

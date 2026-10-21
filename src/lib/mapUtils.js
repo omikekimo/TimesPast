@@ -123,7 +123,11 @@ export function MapResizer() {
 // Notes are represented as squares to distinguish them from circular pin markers.
 // color — the timeline group colour
 export function createNoteIcon(color = '#6b7280', isHovered = false) {
-  const size = isHovered ? 20 : 14;
+  const size   = isHovered ? 20 : 14;
+  // offset: how many px to shift the note's visual center right+down from the parent pin's lat/lng.
+  // This ensures the note always peeks out from beneath its parent pin rather than hiding behind it.
+  // On hover the note shifts a touch further, making it easier to click.
+  const offset = isHovered ? 14 : 12;
   return L.divIcon({
     className: 'note-marker',
     html: `<div style="
@@ -136,8 +140,9 @@ export function createNoteIcon(color = '#6b7280', isHovered = false) {
       font-size:8px;color:white;font-weight:bold;">
       N
     </div>`,
-    iconSize:   [size, size],
-    iconAnchor: [size / 2, size / 2],
+    iconSize:    [size, size],
+    iconAnchor:  [size / 2 - offset, size / 2 - offset],
+    popupAnchor: [offset, -(size / 2)],
   });
 }
 

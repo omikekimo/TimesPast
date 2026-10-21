@@ -247,7 +247,7 @@ export default function DataSpreadsheetPanel({
     reader.onload  = (ev) => {
       const { events: parsedEvents, notes: parsedNotes } = parseCSVFull(ev.target.result);
       if (parsedEvents.length > 0 && onImportEvents) onImportEvents(parsedEvents, fileName);
-      if (parsedNotes.length  > 0 && onImportNotes)  onImportNotes(parsedNotes);
+      if (parsedNotes.length  > 0 && onImportNotes)  onImportNotes(parsedNotes, parsedEvents);
     };
     reader.readAsText(file);
     e.target.value = "";

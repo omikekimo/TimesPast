@@ -50,6 +50,7 @@ export default function MobileLayout({
   handleDeleteEvent, handleClearAllPins, handleCreateGroup,
   handleNavigate, handleRenameGroup,
   onAddPin, onImportEvents, onImportNotes,
+  openPanels, onPanelToggle,
    selectedTileId, onTileChange,
   onSwitchToDesktop,
 }) {
@@ -188,6 +189,8 @@ export default function MobileLayout({
         onClose={() => setDrawerOpen(false)}
         activeLayers={activeLayers}
         onLayerToggle={setActiveLayers}
+        openPanels={openPanels}
+        onPanelToggle={onPanelToggle}
         onSparqlSearch={handleSparqlSearch}
         onCustomQuery={handleCustomQuery}
         onEventSearch={handleEventSearch}

@@ -2,7 +2,7 @@ import React, { useState } from "react";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 
-import { X, ExternalLink, Calendar, MapPin, Plus, Grab, ChevronLeft, ChevronRight, Unlink, Maximize2, Pencil, BookmarkPlus } from "lucide-react";
+import { X, ExternalLink, Calendar, MapPin, Plus, Grab, ChevronLeft, ChevronRight, Unlink, Maximize2, Pencil, BookmarkPlus, Pin } from "lucide-react";
 import { motion } from "framer-motion";
 import { formatPinDate, migrateLegacyPin } from "@/lib/dateUtils";
 import ImageViewer, { isImageUrl } from "@/components/ui/ImageViewer";
@@ -20,13 +20,15 @@ function getLinks(event) {
 export default function DataDetails({
   event,
   allEvents = [],
+  notes = [],
   onClose,
   onAddToComparison,
   onNavigate,
   onEditEvent,
   onOpenEdit,
   onAddNote,
-
+  onViewNote,
+  onPinNote,
   className,
 }) {
   const [showGroupEditor, setShowGroupEditor]         = useState(false);
@@ -45,6 +47,11 @@ export default function DataDetails({
   const nextEvent = groupIdx < groupEvents.length - 1 ? groupEvents[groupIdx + 1] : null;
 
   const allGroups = [...new Set(allEvents.filter(e => e.search_group).map(e => e.search_group))];
+
+    const attachedNotes = notes.filter(n => n.parent_pin_id === event.id);
+  const groupNotes    = event.search_group
+    ? notes.filter(n => n.search_group === event.search_group && n.parent_pin_id !== event.id)
+    : [];
 
   const handleRemoveFromGroup = () => {
     onEditEvent(event.id, { search_group: null, search_color: null });
@@ -245,6 +252,63 @@ export default function DataDetails({
                   )}
                 </div>
               )}
+            </div>
+          )}
+
+                    {/* ── Attached notes ── */}
+          {attachedNotes.length > 0 && (
+            <div className="border border-blue-100 rounded-lg p-3 space-y-2">
+              <span className="text-xs font-semibold text-gray-500 uppercase tracking-wide">
+                Attached Notes ({attachedNotes.length})
+              </span>
+              <div className="space-y-1.5">
+                {attachedNotes.map(note => (
+                  <div key={note.id} className="flex items-center gap-2">
+                    <span className="w-2.5 h-2.5 rounded-sm flex-shrink-0"
+                      style={{ backgroundColor: note.search_color || '#6b7280' }} />
+                    <span className="text-xs text-gray-700 flex-1 truncate">{note.title}</span>
+                    <span className="text-xs text-gray-400 flex-shrink-0">{note.rows?.length ?? 0} results</span>
+                    {onViewNote && (
+                      <button onClick={() => onViewNote(note)}
+                        className="text-xs text-blue-600 hover:text-blue-800 flex-shrink-0">
+                        View
+                      </button>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* ── Group notes (unattached) ── */}
+          {groupNotes.length > 0 && (
+            <div className="border border-dashed border-gray-200 rounded-lg p-3 space-y-2">
+              <span className="text-xs font-semibold text-gray-500 uppercase tracking-wide">
+                Notes in Group (unattached)
+              </span>
+              <div className="space-y-1.5">
+                {groupNotes.map(note => (
+                  <div key={note.id} className="flex items-center gap-2">
+                    <span className="w-2.5 h-2.5 rounded-sm flex-shrink-0"
+                      style={{ backgroundColor: note.search_color || '#6b7280' }} />
+                    <span className="text-xs text-gray-500 flex-1 truncate">{note.title}</span>
+                    <span className="text-xs text-gray-400 flex-shrink-0">{note.rows?.length ?? 0} results</span>
+                    {onViewNote && (
+                      <button onClick={() => onViewNote(note)}
+                        className="text-xs text-blue-600 hover:text-blue-800 flex-shrink-0">
+                        View
+                      </button>
+                    )}
+                    {onPinNote && (
+                      <button onClick={() => onPinNote(note.id, event.id)}
+                        title="Attach this note to the current pin"
+                        className="text-gray-400 hover:text-blue-600 flex-shrink-0">
+                        <Pin className="w-3 h-3" />
+                      </button>
+                    )}
+                  </div>
+                ))}
+              </div>
             </div>
           )}
 

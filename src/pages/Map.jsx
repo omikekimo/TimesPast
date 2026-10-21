@@ -75,6 +75,7 @@ function MapPageInner() {
   const [notes, setNotes] = useState([]);
   const [editingPin, setEditingPin] = useState(null);
   const [noteTarget, setNoteTarget] = useState(null);
+  const [openPanels, setOpenPanels]   = useState(['people']);
     const [selectedTileId, setSelectedTileId] = useState(() => {
     return localStorage.getItem('timespast_tile') || DEFAULT_TILE_ID;
   });
@@ -119,14 +120,19 @@ function MapPageInner() {
   con.success(`[note] saved: "${note.title}"${parentPin ? ` → attached to "${parentPin.title}"` : ''}`);
 };
 
-const handleImportNotes = (importedNotes) => {
-  // Resolve parent pin locations for any notes that have a parent_pin_id
+  const handlePinNote = (noteId, pinId) => {
+    setNotes(prev => prev.map(n => n.id === noteId ? { ...n, parent_pin_id: pinId } : n));
+  };
+
+const handleImportNotes = (importedNotes, freshEvents = []) => {
+  // freshEvents: events just imported in the same batch (not yet in React state)
+  const allEventSources = [...events, ...freshEvents];
   const resolved = importedNotes.map(note => {
     const parentPin = note.parent_pin_id
-      ? events.find(e => e.id === note.parent_pin_id)
+      ? allEventSources.find(e => e.id === note.parent_pin_id)
       : null;
     const groupPin = !parentPin && note.search_group
-      ? events.find(e =>
+      ? allEventSources.find(e =>
           e.search_group === note.search_group &&
           (e.latitude !== 0 || e.longitude !== 0)
         )
@@ -205,6 +211,7 @@ const handleImportNotes = (importedNotes) => {
     setComparisonEvents,
     timeRange, setTimeRange,
     activeLayers, setActiveLayers,
+    openPanels, onPanelToggle: setOpenPanels,
 
         selectedTileId,
     onTileChange: handleTileChange,
@@ -248,7 +255,19 @@ const handleImportNotes = (importedNotes) => {
       <div style={{ height: "100vh", width: "100%", position: "relative" }}>
 
         <DraggablePanel initialPosition={{ x: 24, y: 24 }} dragHandleClassName="drag-handle">
-          <LayerSwitcher activeLayers={activeLayers} onLayerToggle={setActiveLayers} />
+          <LayerSwitcher
+  activeLayers={activeLayers}
+  onLayerToggle={(newLayers) => {
+    // When a layer is newly enabled, auto-open its search panel
+    const added = newLayers.filter(id => !activeLayers.includes(id));
+    if (added.length > 0) {
+      setOpenPanels(prev => [...new Set([...prev, ...added])]);
+    }
+    setActiveLayers(newLayers);
+  }}
+  openPanels={openPanels}
+  onPanelToggle={setOpenPanels}
+/>
         </DraggablePanel>
 
         {activeLayers.includes('about') && (
@@ -257,29 +276,39 @@ const handleImportNotes = (importedNotes) => {
           </DraggablePanel>
         )}
 
-        {activeLayers.includes('events') && (
-          <DraggablePanel initialPosition={{ x: 24, y: 300 }} dragHandleClassName="drag-handle">
-             <EventSearchPanel
-              onSearch={handlers.handleEventSearch} isSearching={isSearching}
-            />
-          </DraggablePanel>
-        )}
+        {openPanels.includes('events') && activeLayers.includes('events') && (
+  <DraggablePanel initialPosition={{ x: 24, y: 300 }} dragHandleClassName="drag-handle">
+    <EventSearchPanel
+      onSearch={handlers.handleEventSearch}
+      isSearching={isSearching}
+      onClose={() => setOpenPanels(prev => prev.filter(id => id !== 'events'))}
+    />
+  </DraggablePanel>
+)}
 
-        {activeLayers.includes('people') && (
-          <DraggablePanel initialPosition={{ x: 24, y: 300 }} dragHandleClassName="drag-handle">
-            <PeopleSearchPanel onSearch={handlers.handleSparqlSearch} isSearching={isSearching} />
-          </DraggablePanel>
-        )}
+        {openPanels.includes('people') && activeLayers.includes('people') && (
+  <DraggablePanel initialPosition={{ x: 24, y: 300 }} dragHandleClassName="drag-handle">
+    <PeopleSearchPanel
+      onSearch={handlers.handleSparqlSearch}
+      isSearching={isSearching}
+      onClose={() => setOpenPanels(prev => prev.filter(id => id !== 'people'))}
+    />
+  </DraggablePanel>
+)}
 
-        {activeLayers.includes('customQueries') && (
-          <DraggablePanel initialPosition={{ x: 24, y: 300 }} dragHandleClassName="drag-handle">
-            <CustomQueryPanel onSearch={handlers.handleCustomQuery} isSearching={isSearching} />
-          </DraggablePanel>
-        )}
+        {openPanels.includes('customQueries') && (
+  <DraggablePanel initialPosition={{ x: 24, y: 300 }} dragHandleClassName="drag-handle">
+    <CustomQueryPanel
+      onSearch={handlers.handleCustomQuery}
+      isSearching={isSearching}
+      onClose={() => setOpenPanels(prev => prev.filter(id => id !== 'customQueries'))}
+    />
+  </DraggablePanel>
+)}
 
                 {activeLayers.includes('mapOptions') && (
           <DraggablePanel initialPosition={{ x: 24, y: 300 }} dragHandleClassName="drag-handle">
-            <MapOptions selectedTileId={selectedTileId} onTileChange={handleTileChange} />
+            <MapOptions selectedTileId={selectedTileId} onTileChange={handleTileChange} onClose={() => setActiveLayers(prev => prev.filter(id => id !== 'mapOptions'))}/>
           </DraggablePanel>
         )}
 
@@ -410,6 +439,14 @@ const handleImportNotes = (importedNotes) => {
                           )}
                         </div>
                         <p className="text-xs text-gray-500 mb-1">{formatPinDate(migrateLegacyPin(event).date)}</p>
+                                                  {(() => {
+                            const pinNoteCount = notes.filter(n => n.parent_pin_id === event.id).length;
+                            return pinNoteCount > 0 ? (
+                              <p className="text-xs text-blue-500 mb-1">
+                                📌 {pinNoteCount} note{pinNoteCount !== 1 ? 's' : ''} attached
+                              </p>
+                            ) : null;
+                          })()}
                         <p className="text-sm text-gray-700 mb-3 line-clamp-3">{event.description}</p>
                         {grp.length > 1 && (
                           <div className="flex gap-1 mb-2">
@@ -456,6 +493,9 @@ const handleImportNotes = (importedNotes) => {
               onEditEvent={handlers.handleEditEvent}
               onOpenEdit={(pin) => setEditingPin(pin)}
               onAddNote={(pin) => setNoteTarget(pin)}
+              onViewNote={(note) => setQueryResults({ rows: note.rows, entityLabel: note.entity_label })}
+              onPinNote={handlePinNote}
+              notes={notes}
               groups={groups}
               className="..."
             />
