@@ -40,12 +40,16 @@ export function useMapHandlers({
   // current state (read-only in handlers)
   events,
   filteredEvents,
+  notes,
   groups,
+  activeLayers,
+  timeRange,
   comparisonEvents,
   lockedEventIds,
   markerRefs,
   // state setters
   setEvents,
+  setNotes,
   setGroups,
   setComparisonEvents,
   setHiddenEventIds,
@@ -53,7 +57,6 @@ export function useMapHandlers({
   setSelectedEvent,
   setActiveLayers,
   setTimeRange,
-
   setSearchQuery,
   setPickingLocation,
   setIsSearching,
@@ -174,28 +177,58 @@ export function useMapHandlers({
 
   // ── Session ───────────────────────────────────────────────────────────────
 
-  const handleLoadSession = useCallback((sessionData) => {
-    if (sessionData.activeLayers)       setActiveLayers(sessionData.activeLayers);
-    if (sessionData.timeRange)          setTimeRange(sessionData.timeRange);
-
-    if (sessionData.searchQuery)        setSearchQuery(sessionData.searchQuery);
-    con?.log(`[session] loaded: "${sessionData.name || 'unnamed'}"`);
-  }, [setActiveLayers, setTimeRange, setSearchQuery, con]);
+    // ── Session ───────────────────────────────────────────────────────────────
 
   const handleSaveSession = useCallback((sessionData) => {
-    con?.log(`[session] saved: "${sessionData.name}"`);
-  }, [con]);
+    // sessionData.id comes from SessionPanel (Date.now() at save time)
+    const fullData = {
+      events,
+      notes,
+      groups,
+      activeLayers,
+      timeRange,
+    };
+    localStorage.setItem(`timespast_session_${sessionData.id}`, JSON.stringify(fullData));
+    con?.success(`[session] saved: "${sessionData.name}" — ${events.length} pin(s), ${notes.length} note(s)`);
+  }, [events, notes, groups, activeLayers, timeRange, con]);
+
+  const handleLoadSession = useCallback((sessionData) => {
+    const stored = localStorage.getItem(`timespast_session_${sessionData.id}`);
+    if (stored) {
+      try {
+        const data = JSON.parse(stored);
+        if (data.events)        setEvents(data.events);
+        if (data.notes)         setNotes(data.notes);
+        if (data.groups)        setGroups(data.groups);
+        if (data.activeLayers)  setActiveLayers(data.activeLayers);
+        if (data.timeRange)     setTimeRange(data.timeRange);
+        con?.success(`[session] loaded: "${sessionData.name}" — ${data.events?.length || 0} pin(s), ${data.notes?.length || 0} note(s)`);
+      } catch (err) {
+        con?.error(`[session] load failed: ${err.message}`);
+      }
+    } else {
+      // Graceful fallback for sessions saved before this update (metadata only)
+      if (sessionData.activeLayers) setActiveLayers(sessionData.activeLayers);
+      if (sessionData.timeRange)    setTimeRange(sessionData.timeRange);
+      con?.warn(`[session] "${sessionData.name}" has no saved pin data — view settings restored only`);
+    }
+  }, [setEvents, setNotes, setGroups, setActiveLayers, setTimeRange, con]);
 
   const handleClearSession = useCallback(() => {
+    if (!window.confirm('Clear session? This will remove all pins and notes from the map.')) return;
+    setEvents([]);
+    setNotes([]);
+    setGroups([]);
     setActiveLayers(['people']);
     setTimeRange({ start: -3000, end: new Date().getFullYear() });
-
     setSearchQuery('');
     setComparisonEvents([]);
     setSelectedEvent(null);
+    setHiddenEventIds(new Set());
+    setLockedEventIds(new Set());
     con?.log('[session] cleared');
-  }, [setActiveLayers, setTimeRange, setSearchQuery,
-      setComparisonEvents, setSelectedEvent, con]);
+  }, [setEvents, setNotes, setGroups, setActiveLayers, setTimeRange, setSearchQuery,
+      setComparisonEvents, setSelectedEvent, setHiddenEventIds, setLockedEventIds, con]);
 
   const handleExportData = useCallback((filteredEvents, sessionInfo) => {
     const data = { events: filteredEvents, session: sessionInfo };

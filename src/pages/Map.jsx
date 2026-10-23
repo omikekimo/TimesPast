@@ -148,10 +148,10 @@ const handleImportNotes = (importedNotes, freshEvents = []) => {
   con.success(`[note] imported ${resolved.length} note(s)`);
 };
 
-  const handlers = useMapHandlers({
-  events, filteredEvents, groups, comparisonEvents,
+    const handlers = useMapHandlers({
+  events, filteredEvents, notes, groups, activeLayers, timeRange, comparisonEvents,
   lockedEventIds, markerRefs,
-  setEvents, setGroups, setComparisonEvents,
+  setEvents, setNotes, setGroups, setComparisonEvents,
   setHiddenEventIds, setLockedEventIds,
   setSelectedEvent, setActiveLayers,
   setTimeRange,

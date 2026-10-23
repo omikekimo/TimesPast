@@ -41,10 +41,11 @@ export default function SessionPanel({
     setSessionName("");
   };
 
-  const handleDelete = (sessionId) => {
+    const handleDelete = (sessionId) => {
     const updated = savedSessions.filter(s => s.id !== sessionId);
     setSavedSessions(updated);
     localStorage.setItem('timesPastSessions', JSON.stringify(updated));
+    localStorage.removeItem(`timespast_session_${sessionId}`);
   };
 
   return (
