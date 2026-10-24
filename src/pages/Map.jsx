@@ -189,7 +189,7 @@ const handleImportNotes = (importedNotes, freshEvents = []) => {
   onSaveSession: handlers.handleSaveSession,
   onLoadSession: handlers.handleLoadSession,
   onClearSession: handlers.handleClearSession,
-  onExportData: (filteredEvts) => handlers.handleExportData(filteredEvts, getCurrentSessionInfo()),
+  onExportData: () => handlers.handleExportData(filteredEvents, getCurrentSessionInfo()),
   onImportData: () => handlers.handleImportData(handlers.handleLoadSession),
   currentSessionInfo: getCurrentSessionInfo(),
 };
