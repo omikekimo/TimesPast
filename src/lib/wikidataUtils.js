@@ -329,3 +329,151 @@ export async function fetchEventData(qid, { con } = {}) {
     return null;
   }
 }
+
+// ── People search pin builder ─────────────────────────────────────────────
+
+/**
+ * Given an already-resolved QID and the original search term,
+ * fetches birth/death data via SPARQL and returns raw pin objects.
+ * Returns { pins, personName, wikipediaUrl }.
+ * Caller is responsible for assigning group fields and IDs.
+ */
+export async function buildPeopleSearchPins(qid, searchTerm, { con } = {}) {
+  const propDefs = [
+    { id: 'P569', label: 'Birth', sparqlVar: 'birthDate', placeId: 'P19', placeVar: 'birthPlace' },
+    { id: 'P570', label: 'Death', sparqlVar: 'deathDate', placeId: 'P20', placeVar: 'deathPlace' },
+  ];
+
+  let selectClause = 'SELECT ?itemLabel ?wikipediaUrl';
+  let whereClause  = `
+    OPTIONAL {
+      ?article schema:about wd:${qid};
+               schema:isPartOf <https://en.wikipedia.org/>;
+               schema:name ?wikipediaTitle.
+      BIND(IRI(CONCAT("https://en.wikipedia.org/wiki/", ENCODE_FOR_URI(?wikipediaTitle))) AS ?wikipediaUrl)
+    }`;
+
+  propDefs.forEach(prop => {
+    selectClause += ` ?${prop.sparqlVar}`;
+    if (prop.placeVar) selectClause += ` ?${prop.placeVar}Label ?${prop.placeVar}Coords`;
+    whereClause += `
+      OPTIONAL {
+        wd:${qid} wdt:${prop.id} ?${prop.sparqlVar}.
+        ${prop.placeVar ? `OPTIONAL {
+          wd:${qid} wdt:${prop.placeId} ?${prop.placeVar}.
+          ?${prop.placeVar} wdt:P625 ?${prop.placeVar}Coords.
+        }` : ''}
+      }`;
+  });
+
+  const sparqlQuery = `${selectClause} WHERE { ${whereClause} SERVICE wikibase:label { bd:serviceParam wikibase:language "[AUTO_LANGUAGE],en". } } LIMIT 1`;
+  const endpointUrl = `https://query.wikidata.org/sparql?query=${encodeURIComponent(sparqlQuery)}&format=json`;
+  const queryResponse = await fetch(endpointUrl, { headers: { Accept: 'application/sparql-results+json' } });
+  if (!queryResponse.ok) throw new Error(`SPARQL error: ${queryResponse.statusText}`);
+  const queryData = await queryResponse.json();
+  const results   = queryData.results.bindings;
+  if (!results.length) return { pins: [], personName: searchTerm, wikipediaUrl: null };
+
+  const row          = results[0];
+  const personName   = row.itemLabel?.value || searchTerm;
+  const wikipediaUrl = row.wikipediaUrl?.value || `https://en.wikipedia.org/wiki/${encodeURIComponent(personName)}`;
+  const pins         = [];
+
+  propDefs.forEach(prop => {
+    if (!row[prop.sparqlVar]) return;
+    const datePart = parseSparqlDate(row[prop.sparqlVar].value);
+    const year     = datePartToYear(datePart);
+    if (!year) return;
+
+    let latitude = 0, longitude = 0, locationDescription = 'an unknown location';
+    if (prop.placeVar) {
+      const coordsBinding = row[`${prop.placeVar}Coords`];
+      if (coordsBinding?.value) {
+        const parts = coordsBinding.value.replace('Point(', '').replace(')', '').split(' ');
+        longitude = parseFloat(parts[0]);
+        latitude  = parseFloat(parts[1]);
+      }
+      const labelBinding = row[`${prop.placeVar}Label`];
+      if (labelBinding?.value) locationDescription = labelBinding.value;
+    }
+
+    pins.push({
+      title:        `${personName} — ${prop.label}`,
+      description:  `${prop.label} of ${personName}${prop.placeVar ? ` in ${locationDescription}` : ''}.`,
+      year,
+      date:         { start: datePart, end: null },
+      latitude,     longitude,
+      category:     'people',
+      significance: 'global',
+      source:       'Wikidata SPARQL',
+      wikipedia_url: wikipediaUrl,
+    });
+  });
+
+  return { pins, personName, wikipediaUrl };
+}
+
+// ── Event pin builder ─────────────────────────────────────────────────────
+
+/**
+ * Converts already-fetched eventData into an array of pin objects.
+ * groupId, groupColor, and wikipediaUrl must be resolved by the caller first.
+ */
+export function buildEventPins(eventData, label, groupId, groupColor, wikipediaUrl) {
+  const { lat, lng, locationLabel, startDate, endDate, pointInTime } = eventData;
+
+  const basePin = {
+    latitude:      lat  ?? 0,
+    longitude:     lng  ?? 0,
+    category:      'events',
+    significance:  'global',
+    source:        'Wikidata Events',
+    search_group:  groupId,
+    search_color:  groupColor,
+    search_query:  label,
+    wikipedia_url: wikipediaUrl || '',
+    links:         wikipediaUrl ? [{ label: 'Wikipedia', url: wikipediaUrl }] : [],
+  };
+
+  const pins = [];
+
+  if (pointInTime && !startDate && !endDate) {
+    const datePart = parseSparqlDate(pointInTime);
+    const year     = datePartToYear(datePart);
+    pins.push({
+      ...basePin,
+      id:          `event_${groupId}_0`,
+      title:       label,
+      description: `${label}${locationLabel ? ` at ${locationLabel}` : ''}.`,
+      year,
+      date: { start: datePart, end: null },
+    });
+  } else {
+    if (startDate) {
+      const datePart = parseSparqlDate(startDate);
+      const year     = datePartToYear(datePart);
+      pins.push({
+        ...basePin,
+        id:          `event_${groupId}_start`,
+        title:       `${label} — Start`,
+        description: `Start of ${label}${locationLabel ? ` at ${locationLabel}` : ''}.`,
+        year,
+        date: { start: datePart, end: null },
+      });
+    }
+    if (endDate) {
+      const datePart = parseSparqlDate(endDate);
+      const year     = datePartToYear(datePart);
+      pins.push({
+        ...basePin,
+        id:          `event_${groupId}_end`,
+        title:       `${label} — End`,
+        description: `End of ${label}${locationLabel ? ` at ${locationLabel}` : ''}.`,
+        year,
+        date: { start: datePart, end: null },
+      });
+    }
+  }
+
+  return pins;
+}

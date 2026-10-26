@@ -12,3 +12,10 @@ export function nextGroupColor() {
   _idx++;
   return c;
 }
+
+/**
+ * Returns the first group whose name matches (case-insensitive), or null.
+ */
+export function findExistingGroup(name, groups) {
+  return groups.find(g => g.name.toLowerCase() === name.toLowerCase()) ?? null;
+}

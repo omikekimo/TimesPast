@@ -8,7 +8,8 @@ import { MapPageContext } from "../components/context/MapPageContext";
 import { LayoutContext } from "../components/context/LayoutContext";
 
 import { parseSparqlDate, datePartToYear, formatPinDate, migrateLegacyPin, csvStringToDate } from "@/lib/dateUtils";
-import { fixLeafletIcons, createCustomIcon, createNoteIcon, spreadStackedMarkers, MapResizer, MapClickHandler, CATEGORY_COLORS } from '@/lib/mapUtils';
+import { fixLeafletIcons, createCustomIcon, createNoteIcon, spreadStackedMarkers, CATEGORY_COLORS, filterEventsByLayersAndTime } from '@/lib/mapUtils';
+import { MapResizer, MapClickHandler } from '@/components/map/MapHelpers';
 import { ConsoleProvider, useConsole } from "../components/console/ConsoleContext";
 import { useIsMobile } from '../hooks/use-mobile';
 import { useMapHandlers } from '../hooks/useMapHandlers';
@@ -89,64 +90,7 @@ function MapPageInner() {
   const layoutContext = useContext(LayoutContext);
   const setSidebarControls = layoutContext?.setSidebarControls;
 
-  const handleSaveNote = (noteData) => {
-  // If a parent pin was selected, inherit its location
-  const parentPin = noteData.parent_pin_id
-    ? events.find(e => e.id === noteData.parent_pin_id)
-    : null;
 
-
-
-
-  // Fall back to first pin in the timeline group if no parent selected
-  const groupPin = !parentPin && noteData.search_group
-    ? events.find(e =>
-        e.search_group === noteData.search_group &&
-        (e.latitude !== 0 || e.longitude !== 0)
-      )
-    : null;
-
-  const locationSource = parentPin || groupPin;
-
-  const note = {
-    ...noteData,
-    id:         `note_${Date.now()}`,
-    type:       'note',
-    latitude:   locationSource?.latitude  ?? 0,
-    longitude:  locationSource?.longitude ?? 0,
-    created_at: new Date().toISOString(),
-  };
-  setNotes(prev => [...prev, note]);
-  con.success(`[note] saved: "${note.title}"${parentPin ? ` → attached to "${parentPin.title}"` : ''}`);
-};
-
-  const handlePinNote = (noteId, pinId) => {
-    setNotes(prev => prev.map(n => n.id === noteId ? { ...n, parent_pin_id: pinId } : n));
-  };
-
-const handleImportNotes = (importedNotes, freshEvents = []) => {
-  // freshEvents: events just imported in the same batch (not yet in React state)
-  const allEventSources = [...events, ...freshEvents];
-  const resolved = importedNotes.map(note => {
-    const parentPin = note.parent_pin_id
-      ? allEventSources.find(e => e.id === note.parent_pin_id)
-      : null;
-    const groupPin = !parentPin && note.search_group
-      ? allEventSources.find(e =>
-          e.search_group === note.search_group &&
-          (e.latitude !== 0 || e.longitude !== 0)
-        )
-      : null;
-    const loc = parentPin || groupPin;
-    return {
-      ...note,
-      latitude:  loc?.latitude  ?? 0,
-      longitude: loc?.longitude ?? 0,
-    };
-  });
-  setNotes(prev => [...prev, ...resolved]);
-  con.success(`[note] imported ${resolved.length} note(s)`);
-};
 
     const handlers = useMapHandlers({
   events, filteredEvents, notes, groups, activeLayers, timeRange, comparisonEvents,
@@ -166,20 +110,8 @@ const handleImportNotes = (importedNotes, freshEvents = []) => {
   useEffect(() => { filterEvents(); }, [events, timeRange, searchQuery, activeLayers]);
 
   const filterEvents = () => {
-    let layerFiltered = events.filter(event => {
-      if (activeLayers.includes(event.category)) return true;
-      if (activeLayers.includes('events') && !event.category) return true;
-    });
-    let filtered = layerFiltered.filter(event => {
-      const withinTimeRange = event.year >= timeRange.start && event.year <= timeRange.end;
-
-      const matchesSearch = !searchQuery ||
-        event.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        event.description?.toLowerCase().includes(searchQuery.toLowerCase());
-      return withinTimeRange && matchesSearch;
-    });
-    setFilteredEvents(filtered);
-  };
+  setFilteredEvents(filterEventsByLayersAndTime(events, { activeLayers, timeRange, searchQuery }));
+};
 
   const getCurrentSessionInfo = useCallback(() => ({
     eventCount: filteredEvents.length, activeLayers, timeRange, searchQuery
@@ -189,8 +121,8 @@ const handleImportNotes = (importedNotes, freshEvents = []) => {
   onSaveSession: handlers.handleSaveSession,
   onLoadSession: handlers.handleLoadSession,
   onClearSession: handlers.handleClearSession,
-  onExportData: () => handlers.handleExportData(filteredEvents, getCurrentSessionInfo()),
-  onImportData: () => handlers.handleImportData(handlers.handleLoadSession),
+  onExportData: () => handlers.handleExportData(getCurrentSessionInfo()),
+  onImportData: () => handlers.handleImportData(),
   currentSessionInfo: getCurrentSessionInfo(),
 };
 
@@ -234,7 +166,7 @@ const handleImportNotes = (importedNotes, freshEvents = []) => {
     handleRenameGroup: handlers.handleRenameGroup,
     onAddPin: handlers.handleAddPin,
     onImportEvents: handlers.handleImportEvents,
-    onImportNotes: handleImportNotes,
+    onImportNotes: handlers.handleImportNotes,
   };
 
   // ── Mobile layout ──────────────────────────────────────────────────────────
@@ -337,7 +269,7 @@ const handleImportNotes = (importedNotes, freshEvents = []) => {
             onImportEvents={handlers.handleImportEvents}
             notes={notes}
             onSelectNote={(note) => setQueryResults({ rows: note.rows, entityLabel: note.entity_label })}
-            onImportNotes={handleImportNotes}
+            onImportNotes={handlers.handleImportNotes}
           />
         </DraggablePanel>
 
@@ -494,7 +426,7 @@ const handleImportNotes = (importedNotes, freshEvents = []) => {
               onOpenEdit={(pin) => setEditingPin(pin)}
               onAddNote={(pin) => setNoteTarget(pin)}
               onViewNote={(note) => setQueryResults({ rows: note.rows, entityLabel: note.entity_label })}
-              onPinNote={handlePinNote}
+              onPinNote={handlers.handlePinNote}
               notes={notes}
               groups={groups}
               className="..."
@@ -518,7 +450,7 @@ const handleImportNotes = (importedNotes, freshEvents = []) => {
     parentPin={noteTarget}
     groups={groups}
     availablePins={filteredEvents}
-    onSave={(noteData) => { handleSaveNote(noteData); setNoteTarget(null); }}
+    onSave={(noteData) => { handlers.handleSaveNote(noteData); setNoteTarget(null); }}
     onClose={() => setNoteTarget(null)}
   />
 )}
@@ -538,7 +470,7 @@ const handleImportNotes = (importedNotes, freshEvents = []) => {
   results={queryResults.rows}
   entityLabel={queryResults.entityLabel}
   onClose={() => setQueryResults(null)}
-  onSaveNote={handleSaveNote}
+  onSaveNote={handlers.handleSaveNote}
   groups={groups}
   availablePins={filteredEvents}
 />
@@ -548,7 +480,19 @@ const handleImportNotes = (importedNotes, freshEvents = []) => {
 
         {activeLayers.includes('console') && (
           <DraggablePanel initialPosition={{ x: 100, y: window.innerHeight - 420 }} dragHandleClassName="drag-handle">
-            <ConsolePanel onClose={() => setActiveLayers(prev => prev.filter(id => id !== 'console'))} />
+            <ConsolePanel
+  appState={{ events, notes, groups, activeLayers, timeRange, searchQuery, filteredEvents }}
+  setAppState={(patch) => {
+    if ('events'       in patch) setEvents(patch.events);
+    if ('notes'        in patch) setNotes(patch.notes);
+    if ('groups'       in patch) setGroups(patch.groups);
+    if ('activeLayers' in patch) setActiveLayers(patch.activeLayers);
+    if ('timeRange'    in patch) setTimeRange(patch.timeRange);
+    if ('searchQuery'  in patch) setSearchQuery(patch.searchQuery);
+  }}
+  handlers={handlers}
+  onClose={() => setActiveLayers(prev => prev.filter(id => id !== 'console'))}
+/>
           </DraggablePanel>
         )}
 

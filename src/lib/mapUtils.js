@@ -5,8 +5,8 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 import L from 'leaflet';
-import { useMap, useMapEvents } from 'react-leaflet';
-import { useEffect } from 'react';
+//import { useMap, useMapEvents } from 'react-leaflet';
+//import { useEffect } from 'react';
 
 // ── Leaflet default marker fix ───────────────────────────────────────────────
 // Must be called once before any markers are rendered.
@@ -38,6 +38,46 @@ export const CATEGORY_COLORS = {
   sciences:         '#14b8a6',
   weather:          '#06b6d4',
 };
+
+// ── Layer category definitions ────────────────────────────────────────────────
+// Single source of truth for all layer/category IDs and their target layer names.
+// Used by CustomQueryPanel, handleCustomQuery, and future console commands.
+export const CATEGORY_DEFS = [
+  { id: 'people',           targetLayer: 'people'           },
+  { id: 'organisations',    targetLayer: 'organisations'    },
+  { id: 'livingEntities',   targetLayer: 'livingEntities'   },
+  { id: 'artificialAgents', targetLayer: 'artificialAgents' },
+  { id: 'events',           targetLayer: 'events'           },
+  { id: 'phenomena',        targetLayer: 'phenomena'        },
+  { id: 'conflicts',        targetLayer: 'conflicts'        },
+  { id: 'places',           targetLayer: 'places'           },
+  { id: 'objects',          targetLayer: 'objects'          },
+  { id: 'technology',       targetLayer: 'technology'       },
+  { id: 'works',            targetLayer: 'works'            },
+  { id: 'concepts',         targetLayer: 'concepts'         },
+  { id: 'sciences',         targetLayer: 'sciences'         },
+  { id: 'weather',          targetLayer: 'weather'          },
+];
+
+/**
+ * Filters an array of event pins by active layers, time range, and search query.
+ * Pure function — returns the filtered array, no side effects.
+ */
+export function filterEventsByLayersAndTime(events, { activeLayers, timeRange, searchQuery = '' }) {
+  const layerFiltered = events.filter(event => {
+    if (activeLayers.includes(event.category)) return true;
+    if (activeLayers.includes('events') && !event.category) return true;
+    return false;
+  });
+
+  return layerFiltered.filter(event => {
+    const withinTimeRange = event.year >= timeRange.start && event.year <= timeRange.end;
+    const matchesSearch   = !searchQuery ||
+      event.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      event.description?.toLowerCase().includes(searchQuery.toLowerCase());
+    return withinTimeRange && matchesSearch;
+  });
+}
 
 // ── Create a custom Leaflet div icon ─────────────────────────────────────────
 // category     — event category string, used to pick colour
@@ -108,16 +148,7 @@ export function spreadStackedMarkers(events, { con } = {}) {
   return result;
 }
 
-// ── MapResizer component ──────────────────────────────────────────────────────
-// Tells Leaflet to recalculate map dimensions after layout changes.
-// Must be used as a child of <MapContainer>.
-export function MapResizer() {
-  const map = useMap();
-  useEffect(() => {
-    setTimeout(() => map.invalidateSize(), 200);
-  }, [map]);
-  return null;
-}
+
 
 // ── Create a square note marker ───────────────────────────────────────────────
 // Notes are represented as squares to distinguish them from circular pin markers.
@@ -147,19 +178,4 @@ export function createNoteIcon(color = '#6b7280', isHovered = false) {
 }
 
 
-// ── MapClickHandler component ─────────────────────────────────────────────────
-// Listens for map clicks and calls onPick with { lat, lng } when picking is active.
-// Must be used as a child of <MapContainer>.
-// picking — boolean, whether pin-picking mode is active
-// onPick  — callback receiving { lat, lng }
-export function MapClickHandler({ picking, onPick }) {
-  useMapEvents({
-    click(e) {
-      if (picking) {
-        onPick({ lat: e.latlng.lat, lng: e.latlng.lng });
-      }
-    },
-  });
-  return null;
-}
 

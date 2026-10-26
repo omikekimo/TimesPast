@@ -35,7 +35,7 @@ const SIZES = [
   { label: '14', value: '14px' },
 ];
 
-export default function ConsolePanel({ appState, setAppState, onClose }) {
+export default function ConsolePanel({ appState, setAppState, handlers, onClose }) {
   const con = useConsole();
 
   const [input, setInput]     = useState('');
@@ -114,7 +114,7 @@ export default function ConsolePanel({ appState, setAppState, onClose }) {
       return;
     }
     try {
-      cmd.run({ console: con, appState, setAppState, rawInput: trimmed });
+      cmd.run({ console: con, appState, setAppState, handlers, rawInput: trimmed });
     } catch (err) {
       con.error(`Command error: ${err.message}`);
     }

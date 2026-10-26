@@ -6,7 +6,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { useCallback } from 'react';
-import { nextGroupColor } from '@/lib/searchGroups';
+import { nextGroupColor, findExistingGroup } from '@/lib/searchGroups';
 import { parseSparqlDate, datePartToYear, csvStringToDate } from '@/lib/dateUtils';
 import {
   fetchEntityProperties,
@@ -14,16 +14,20 @@ import {
   resolveBinding,
   resolvedToPin,
   resolveWikipediaUrl,
+  buildPeopleSearchPins,
+  buildEventPins,
 } from '@/lib/wikidataUtils';
 import { InvokeLLM } from '@/integrations/Core';
+import { CATEGORY_DEFS } from '@/lib/mapUtils';
+import { csvRowsToEvents } from '@/lib/csvUtils';
+import { buildSessionSnapshot, saveSessionBlob, loadSessionBlob } from '@/lib/sessionUtils';
+import { downloadJson, readJsonFile }                              from '@/lib/fileUtils';
 
 // Checks if a timeline group with this name already exists.
 // If it does, asks the user if they want to reuse it.
 // Returns { groupId, groupColor } — either existing or new.
 function resolveGroupForSearch(searchName, groups) {
-  const existing = groups.find(
-    g => g.name.toLowerCase() === searchName.toLowerCase()
-  );
+  const existing = findExistingGroup(searchName, groups);
   if (existing) {
     const reuse = window.confirm(
       `A timeline group called "${existing.name}" already exists.\n\nAdd new pins to it?`
@@ -179,40 +183,74 @@ export function useMapHandlers({
 
     // ── Session ───────────────────────────────────────────────────────────────
 
-  const handleSaveSession = useCallback((sessionData) => {
-    // sessionData.id comes from SessionPanel (Date.now() at save time)
-    const fullData = {
-      events,
-      notes,
-      groups,
-      activeLayers,
-      timeRange,
-    };
-    localStorage.setItem(`timespast_session_${sessionData.id}`, JSON.stringify(fullData));
-    con?.success(`[session] saved: "${sessionData.name}" — ${events.length} pin(s), ${notes.length} note(s)`);
-  }, [events, notes, groups, activeLayers, timeRange, con]);
+ const handleSaveSession = useCallback((sessionData) => {
+  const fullData = buildSessionSnapshot({ events, notes, groups, activeLayers, timeRange });
+  saveSessionBlob(sessionData.id, fullData);
+  con?.success(`[session] saved: "${sessionData.name}" — ${events.length} pin(s), ${notes.length} note(s)`);
+}, [events, notes, groups, activeLayers, timeRange, con]);
 
-  const handleLoadSession = useCallback((sessionData) => {
-    const stored = localStorage.getItem(`timespast_session_${sessionData.id}`);
-    if (stored) {
-      try {
-        const data = JSON.parse(stored);
-        if (data.events)        setEvents(data.events);
-        if (data.notes)         setNotes(data.notes);
-        if (data.groups)        setGroups(data.groups);
-        if (data.activeLayers)  setActiveLayers(data.activeLayers);
-        if (data.timeRange)     setTimeRange(data.timeRange);
-        con?.success(`[session] loaded: "${sessionData.name}" — ${data.events?.length || 0} pin(s), ${data.notes?.length || 0} note(s)`);
-      } catch (err) {
-        con?.error(`[session] load failed: ${err.message}`);
-      }
+const handleLoadSession = useCallback((sessionData) => {
+  try {
+    const data = loadSessionBlob(sessionData.id);
+    if (data) {
+      if (data.events)       setEvents(data.events);
+      if (data.notes)        setNotes(data.notes);
+      if (data.groups)       setGroups(data.groups);
+      if (data.activeLayers) setActiveLayers(data.activeLayers);
+      if (data.timeRange)    setTimeRange(data.timeRange);
+      con?.success(`[session] loaded: "${sessionData.name}" — ${data.events?.length || 0} pin(s), ${data.notes?.length || 0} note(s)`);
     } else {
-      // Graceful fallback for sessions saved before this update (metadata only)
       if (sessionData.activeLayers) setActiveLayers(sessionData.activeLayers);
       if (sessionData.timeRange)    setTimeRange(sessionData.timeRange);
       con?.warn(`[session] "${sessionData.name}" has no saved pin data — view settings restored only`);
     }
-  }, [setEvents, setNotes, setGroups, setActiveLayers, setTimeRange, con]);
+  } catch (err) {
+    con?.error(`[session] load failed: ${err.message}`);
+  }
+}, [setEvents, setNotes, setGroups, setActiveLayers, setTimeRange, con]);
+
+const handleExportData = useCallback((sessionInfo) => {
+  const filename = `timespast-export-${new Date().toISOString().split('T')[0]}.json`;
+  downloadJson({ events, notes, session: sessionInfo }, filename);
+  con?.success('[session] data exported');
+}, [events, notes, con]);
+
+const handleImportData = useCallback(async () => {
+  try {
+    const data = await readJsonFile();
+
+    if (data.events?.length) {
+      setEvents(data.events);
+
+      if (data.notes?.length) {
+  setNotes(data.notes);
+}
+
+      // Reconstruct groups from the imported events
+      const groupMap = {};
+      data.events.forEach(e => {
+        if (e.search_group && !groupMap[e.search_group]) {
+          groupMap[e.search_group] = {
+            id:    e.search_group,
+            name:  e.search_query  || e.search_group,
+            color: e.search_color  || '#888888',
+          };
+        }
+      });
+      if (Object.keys(groupMap).length > 0) {
+        setGroups(Object.values(groupMap));
+      }
+    }
+
+    if (data.session?.activeLayers) setActiveLayers(data.session.activeLayers);
+    if (data.session?.timeRange)    setTimeRange(data.session.timeRange);
+
+    con?.success(`[session] imported ${data.events?.length || 0} pin(s)`);
+  } catch (err) {
+    con?.error(`[session] import failed: ${err.message}`);
+  }
+}, [setEvents, setNotes, setGroups, setActiveLayers, setTimeRange, con]);
+
 
   const handleClearSession = useCallback(() => {
     if (!window.confirm('Clear session? This will remove all pins and notes from the map.')) return;
@@ -230,88 +268,33 @@ export function useMapHandlers({
   }, [setEvents, setNotes, setGroups, setActiveLayers, setTimeRange, setSearchQuery,
       setComparisonEvents, setSelectedEvent, setHiddenEventIds, setLockedEventIds, con]);
 
-  const handleExportData = useCallback((filteredEvents, sessionInfo) => {
-    const data = { events: filteredEvents, session: sessionInfo };
-    const blob  = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
-    const url   = URL.createObjectURL(blob);
-    const a     = document.createElement('a');
-    a.href      = url;
-    a.download  = `timespast-export-${new Date().toISOString().split('T')[0]}.json`;
-    a.click();
-    URL.revokeObjectURL(url);
-    con?.success('[session] data exported');
-  }, [con]);
 
-  const handleImportData = useCallback((onLoad) => {
-    const input    = document.createElement('input');
-    input.type     = 'file';
-    input.accept   = '.json';
-    input.onchange = (e) => {
-      const file = e.target.files[0];
-      if (!file) return;
-      const reader = new FileReader();
-      reader.onload = (ev) => {
-        try {
-          const data = JSON.parse(ev.target.result);
-          if (data.session) onLoad(data.session);
-          con?.success('[session] data imported');
-        } catch (err) {
-          con?.error(`[session] import failed: ${err.message}`);
-        }
-      };
-      reader.readAsText(file);
-    };
-    input.click();
-  }, [con]);
 
   // ── CSV import ────────────────────────────────────────────────────────────
 
   const handleImportEvents = useCallback((rows, fileName) => {
-    const ts              = Date.now();
-    const fallbackGroupId = `csv_${ts}`;
-    const fallbackColor   = nextGroupColor();
-    const fallbackName    = fileName || 'CSV Import';
-    const newGroups       = {};
+  const fallbackGroupId = `csv_${Date.now()}`;
+  const fallbackColor   = nextGroupColor();
+  const fallbackName    = fileName || 'CSV Import';
 
-    const toCreate = rows.filter(r => r.title).map((r, i) => {
-      const groupId    = r.search_group || fallbackGroupId;
-      const groupColor = r.search_color || fallbackColor;
-      const groupName  = r.search_query || fallbackName;
-      const parsedDate = r.date ? csvStringToDate(r.date) : null;
-      const year       = parsedDate
-        ? datePartToYear(parsedDate.start)
-        : (parseInt(r.year, 10) || 0);
+  const { events: toCreate, groups: newGroups } = csvRowsToEvents(rows, {
+    fallbackGroupId,
+    fallbackColor,
+    fallbackName,
+  });
 
-      if (groupId && !newGroups[groupId]) {
-        newGroups[groupId] = { id: groupId, name: groupName, color: groupColor };
-      }
-
-      return {
-        id:           r.id || `${groupId}_imported_${i}`,
-        title:        r.title, year, date: parsedDate,
-        latitude:     parseFloat(r.latitude)  || 0,
-        longitude:    parseFloat(r.longitude) || 0,
-        category:     r.category?.toLowerCase().replace(' ', '_') || 'events',
-        significance: r.significance?.toLowerCase() || 'local',
-        description:  r.description  || '',
-        wikipedia_url: r.wikipedia_url || '',
-        source:       r.source || 'CSV Import',
-        search_group: groupId, search_query: groupName, search_color: groupColor,
-      };
+  if (Object.keys(newGroups).length > 0) {
+    setGroups(prev => {
+      const existing = new Set(prev.map(g => g.id));
+      return [...prev, ...Object.values(newGroups).filter(g => !existing.has(g.id))];
     });
+  }
 
-    if (Object.keys(newGroups).length > 0) {
-      setGroups(prev => {
-        const existing = new Set(prev.map(g => g.id));
-        return [...prev, ...Object.values(newGroups).filter(g => !existing.has(g.id))];
-      });
-    }
-
-    if (toCreate.length > 0) {
-      setEvents(prev => [...prev, ...toCreate]);
-      con?.success(`[import] ${toCreate.length} event(s) from "${fallbackName}" across ${Object.keys(newGroups).length} group(s)`);
-    }
-  }, [setEvents, setGroups, con]);
+  if (toCreate.length > 0) {
+    setEvents(prev => [...prev, ...toCreate]);
+    con?.success(`[import] ${toCreate.length} event(s) from "${fallbackName}" across ${Object.keys(newGroups).length} group(s)`);
+  }
+}, [setEvents, setGroups, con]);
 
   // ── Layout switch ─────────────────────────────────────────────────────────
 
@@ -324,100 +307,40 @@ export function useMapHandlers({
   // ── Wikidata searches ─────────────────────────────────────────────────────
 
   const handleSparqlSearch = useCallback(async (searchTerm) => {
-    if (!searchTerm.trim()) return;
-    setIsSearching(true);
-    con?.log(`[sparql] people search: "${searchTerm}"`);
+  if (!searchTerm.trim()) return;
+  setIsSearching(true);
+  con?.log(`[sparql] people search: "${searchTerm}"`);
 
-    try {
-      const searchUrl = `https://www.wikidata.org/w/api.php?action=wbsearchentities&search=${encodeURIComponent(searchTerm)}&language=en&limit=1&format=json&origin=*`;
-      const searchResponse = await fetch(searchUrl);
-      if (!searchResponse.ok) throw new Error(`Wikidata search error: ${searchResponse.statusText}`);
-      const searchData = await searchResponse.json();
-      const qId = searchData.search?.[0]?.id;
-      if (!qId) { con?.warn(`Could not find "${searchTerm}" on Wikidata`); setIsSearching(false); return; }
+  try {
+    // Step 1 — resolve search term to QID
+    const searchUrl = `https://www.wikidata.org/w/api.php?action=wbsearchentities&search=${encodeURIComponent(searchTerm)}&language=en&limit=1&format=json&origin=*`;
+    const searchResponse = await fetch(searchUrl);
+    if (!searchResponse.ok) throw new Error(`Wikidata search error: ${searchResponse.statusText}`);
+    const searchData = await searchResponse.json();
+    const qid = searchData.search?.[0]?.id;
+    if (!qid) { con?.warn(`Could not find "${searchTerm}" on Wikidata`); setIsSearching(false); return; }
 
-      const propDefs = [
-        { id: 'P569', label: 'Birth', sparqlVar: 'birthDate', placeId: 'P19', placeVar: 'birthPlace' },
-        { id: 'P570', label: 'Death', sparqlVar: 'deathDate', placeId: 'P20', placeVar: 'deathPlace' },
-      ];
+    // Step 2 — build raw pins via pure library function
+    const { pins, personName } = await buildPeopleSearchPins(qid, searchTerm, { con });
+    if (!pins.length) { con?.warn(`[sparql] no relevant events found for "${searchTerm}"`); setIsSearching(false); return; }
 
-      let selectClause = 'SELECT ?itemLabel ?wikipediaUrl';
-      let whereClause  = `
-        OPTIONAL {
-          ?article schema:about wd:${qId};
-                   schema:isPartOf <https://en.wikipedia.org/>;
-                   schema:name ?wikipediaTitle.
-          BIND(IRI(CONCAT("https://en.wikipedia.org/wiki/", ENCODE_FOR_URI(?wikipediaTitle))) AS ?wikipediaUrl)
-        }`;
-
-      propDefs.forEach(prop => {
-        selectClause += ` ?${prop.sparqlVar}`;
-        if (prop.placeVar) selectClause += ` ?${prop.placeVar}Label ?${prop.placeVar}Coords`;
-        whereClause += `
-          OPTIONAL {
-            wd:${qId} wdt:${prop.id} ?${prop.sparqlVar}.
-            ${prop.placeVar ? `OPTIONAL {
-              wd:${qId} wdt:${prop.placeId} ?${prop.placeVar}.
-              ?${prop.placeVar} wdt:P625 ?${prop.placeVar}Coords.
-            }` : ''}
-          }`;
-      });
-
-      const sparqlQuery = `${selectClause} WHERE { ${whereClause} SERVICE wikibase:label { bd:serviceParam wikibase:language "[AUTO_LANGUAGE],en". } } LIMIT 1`;
-      const endpointUrl = `https://query.wikidata.org/sparql?query=${encodeURIComponent(sparqlQuery)}&format=json`;
-      const queryResponse = await fetch(endpointUrl, { headers: { Accept: 'application/sparql-results+json' } });
-      if (!queryResponse.ok) throw new Error(`SPARQL error: ${queryResponse.statusText}`);
-      const queryData = await queryResponse.json();
-      const results   = queryData.results.bindings;
-      if (!results.length) { con?.warn(`No data found for "${searchTerm}"`); setIsSearching(false); return; }
-
-      const row         = results[0];
-      const personName  = row.itemLabel?.value || searchTerm;
-      const wikipediaUrl = row.wikipediaUrl?.value || `https://en.wikipedia.org/wiki/${encodeURIComponent(personName)}`;
-      const { groupId, groupColor } = resolveGroupForSearch(searchTerm.trim(), groups);
-      const newEvents = [];
-
-      propDefs.forEach(prop => {
-        if (!row[prop.sparqlVar]) return;
-        const datePart = parseSparqlDate(row[prop.sparqlVar].value);
-        const year     = datePartToYear(datePart);
-        if (!year) return;
-
-        let latitude = 0, longitude = 0, locationDescription = 'an unknown location';
-        if (prop.placeVar) {
-          const coordsBinding = row[`${prop.placeVar}Coords`];
-          if (coordsBinding?.value) {
-            const parts = coordsBinding.value.replace('Point(', '').replace(')', '').split(' ');
-            longitude = parseFloat(parts[0]); latitude = parseFloat(parts[1]);
-          }
-          const labelBinding = row[`${prop.placeVar}Label`];
-          if (labelBinding?.value) locationDescription = labelBinding.value;
-        }
-
-        newEvents.push({
-          title:        `${personName} — ${prop.label}`,
-          description:  `${prop.label} of ${personName}${prop.placeVar ? ` in ${locationDescription}` : ''}.`,
-          year, date: { start: datePart, end: null },
-          latitude, longitude,
-          category: 'people', significance: 'global',
-          source: 'Wikidata SPARQL', wikipedia_url: wikipediaUrl,
-          search_group: groupId, search_color: groupColor, search_query: searchTerm.trim(),
-        });
-      });
-
-      if (newEvents.length > 0) {
-        const withIds = newEvents.map((e, i) => ({ ...e, id: `sparql_${groupId}_${i}` }));
-        setEvents(prev => [...prev, ...withIds]);
-        setGroups(prev => prev.find(g => g.id === groupId) ? prev : [...prev, { id: groupId, name: searchTerm.trim(), color: groupColor }]);
-        con?.success(`[sparql] added ${withIds.length} pin(s) for "${personName}"`);
-      } else {
-        con?.warn(`[sparql] no relevant events found for "${personName}"`);
-      }
-    } catch (err) {
-      con?.error(`[sparql] error: ${err.message}`);
-    }
-    setIsSearching(false);
-  }, [setEvents, setGroups, setIsSearching, con]);
+    // Step 3 — assign group and IDs, commit to state
+    const { groupId, groupColor } = resolveGroupForSearch(searchTerm.trim(), groups);
+    const withIds = pins.map((e, i) => ({
+      ...e,
+      id:           `sparql_${groupId}_${i}`,
+      search_group: groupId,
+      search_color: groupColor,
+      search_query: searchTerm.trim(),
+    }));
+    setEvents(prev => [...prev, ...withIds]);
+    setGroups(prev => prev.find(g => g.id === groupId) ? prev : [...prev, { id: groupId, name: personName, color: groupColor }]);
+    con?.success(`[sparql] added ${withIds.length} pin(s) for "${personName}"`);
+  } catch (err) {
+    con?.error(`[sparql] error: ${err.message}`);
+  }
+  setIsSearching(false);
+}, [setEvents, setGroups, setIsSearching, groups, con]);
 
   const handleCustomQuery = useCallback(async (qid, entityLabel, activeCategories, selectedPids) => {
     setIsSearching(true);
@@ -425,22 +348,7 @@ export function useMapHandlers({
    con?.log(`[custom] querying: ${entityLabel} (${qid})`);
 
     try {
-      const CATEGORY_DEFS = [
-        { id: 'people',          targetLayer: 'people'          },
-        { id: 'organisations',   targetLayer: 'organisations'   },
-        { id: 'livingEntities',  targetLayer: 'livingEntities'  },
-        { id: 'artificialAgents',targetLayer: 'artificialAgents'},
-        { id: 'events',          targetLayer: 'events'          },
-        { id: 'phenomena',       targetLayer: 'phenomena'       },
-        { id: 'conflicts',       targetLayer: 'conflicts'       },
-        { id: 'places',          targetLayer: 'places'          },
-        { id: 'objects',         targetLayer: 'objects'         },
-        { id: 'technology',      targetLayer: 'technology'      },
-        { id: 'works',           targetLayer: 'works'           },
-        { id: 'concepts',        targetLayer: 'concepts'        },
-        { id: 'sciences',        targetLayer: 'sciences'        },
-        { id: 'weather',         targetLayer: 'weather'         },
-      ];
+
       const active = CATEGORY_DEFS.filter(c => activeCategories.includes(c.id));
       const pids   = active.map(c => selectedPids[c.id]).filter(Boolean);
 
@@ -547,7 +455,6 @@ if (imageUrl) {
   con?.log(`[events] searching: ${label} (${qid})`);
 
   try {
-    // Step 1 — fetch structured event data via the pipeline
     const eventData = await fetchEventData(qid, { con });
     if (!eventData) {
       con?.warn(`[events] no data returned for "${label}"`);
@@ -555,71 +462,10 @@ if (imageUrl) {
       return;
     }
 
-    const { lat, lng, locationLabel, startDate, endDate, pointInTime } = eventData;
-
-    // Step 2 — resolve or reuse a timeline group
     const { groupId, groupColor } = resolveGroupForSearch(label, groups);
     const wikipediaUrl = await resolveWikipediaUrl(qid, { con });
 
-    const basePin = {
-      latitude:      lat  ?? 0,
-      longitude:     lng  ?? 0,
-      category:      'events',
-      significance:  'global',
-      source:        'Wikidata Events',
-      search_group:  groupId,
-      search_color:  groupColor,
-      search_query:  label,
-      wikipedia_url: wikipediaUrl || '',
-      links:         wikipediaUrl ? [{ label: 'Wikipedia', url: wikipediaUrl }] : [],
-    };
-
-    const newPins = [];
-
-    if (pointInTime && !startDate && !endDate) {
-      // Single point-in-time event — one pin
-      const datePart = parseSparqlDate(pointInTime);
-      const year     = datePartToYear(datePart);
-      newPins.push({
-        ...basePin,
-        id:          `event_${groupId}_0`,
-        title:       label,
-        description: `${label}${locationLabel ? ` at ${locationLabel}` : ''}.`,
-        year,
-        date: { start: datePart, end: null },
-      });
-      con?.log(`[events] point-in-time pin: "${label}" (${year})`);
-
-    } else {
-      // Range event — start pin and/or end pin connected by polyline
-      if (startDate) {
-        const datePart = parseSparqlDate(startDate);
-        const year     = datePartToYear(datePart);
-        newPins.push({
-          ...basePin,
-          id:          `event_${groupId}_start`,
-          title:       `${label} — Start`,
-          description: `Start of ${label}${locationLabel ? ` at ${locationLabel}` : ''}.`,
-          year,
-          date: { start: datePart, end: null },
-        });
-        con?.log(`[events] start pin: ${year}`);
-      }
-
-      if (endDate) {
-        const datePart = parseSparqlDate(endDate);
-        const year     = datePartToYear(datePart);
-        newPins.push({
-          ...basePin,
-          id:          `event_${groupId}_end`,
-          title:       `${label} — End`,
-          description: `End of ${label}${locationLabel ? ` at ${locationLabel}` : ''}.`,
-          year,
-          date: { start: datePart, end: null },
-        });
-        con?.log(`[events] end pin: ${year}`);
-      }
-    }
+    const newPins = buildEventPins(eventData, label, groupId, groupColor, wikipediaUrl);
 
     if (newPins.length > 0) {
       setEvents(prev => [...prev, ...newPins]);
@@ -632,7 +478,6 @@ if (imageUrl) {
     } else {
       con?.warn(`[events] no temporal data found for "${label}" — try Custom Query for more options`);
     }
-
   } catch (err) {
     con?.error(`[events] search failed: ${err.message}`);
     con?.error(err.stack || '');
@@ -640,6 +485,61 @@ if (imageUrl) {
 
   setIsSearching(false);
 }, [setEvents, setGroups, setIsSearching, groups, con]);
+
+  // ── Notes ─────────────────────────────────────────────────────────────────
+
+const handleSaveNote = useCallback((noteData) => {
+  const parentPin = noteData.parent_pin_id
+    ? events.find(e => e.id === noteData.parent_pin_id)
+    : null;
+
+  const groupPin = !parentPin && noteData.search_group
+    ? events.find(e =>
+        e.search_group === noteData.search_group &&
+        (e.latitude !== 0 || e.longitude !== 0)
+      )
+    : null;
+
+  const locationSource = parentPin || groupPin;
+
+  const note = {
+    ...noteData,
+    id:         `note_${Date.now()}`,
+    type:       'note',
+    latitude:   locationSource?.latitude  ?? 0,
+    longitude:  locationSource?.longitude ?? 0,
+    created_at: new Date().toISOString(),
+  };
+  setNotes(prev => [...prev, note]);
+  con?.success(`[note] saved: "${note.title}"${parentPin ? ` → attached to "${parentPin.title}"` : ''}`);
+}, [events, setNotes, con]);
+
+const handleImportNotes = useCallback((importedNotes, freshEvents = []) => {
+  const allEventSources = [...events, ...freshEvents];
+  const resolved = importedNotes.map(note => {
+    const parentPin = note.parent_pin_id
+      ? allEventSources.find(e => e.id === note.parent_pin_id)
+      : null;
+    const groupPin = !parentPin && note.search_group
+      ? allEventSources.find(e =>
+          e.search_group === note.search_group &&
+          (e.latitude !== 0 || e.longitude !== 0)
+        )
+      : null;
+    const loc = parentPin || groupPin;
+    return {
+      ...note,
+      latitude:  loc?.latitude  ?? 0,
+      longitude: loc?.longitude ?? 0,
+    };
+  });
+  setNotes(prev => [...prev, ...resolved]);
+  con?.success(`[note] imported ${resolved.length} note(s)`);
+}, [events, setNotes, con]);
+
+const handlePinNote = useCallback((noteId, pinId) => {
+  setNotes(prev => prev.map(n => n.id === noteId ? { ...n, parent_pin_id: pinId } : n));
+}, [setNotes]);
 
   // ── Return all handlers ───────────────────────────────────────────────────
   return {
@@ -664,5 +564,8 @@ if (imageUrl) {
     handleSparqlSearch,
     handleCustomQuery,
     handleEventSearch,
+    handleSaveNote,
+    handleImportNotes,
+    handlePinNote,
   };
 }
