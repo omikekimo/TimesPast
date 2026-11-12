@@ -149,8 +149,15 @@ export default function SessionPanel({
           <div className="pt-1 border-t border-gray-100 dark:border-gray-700">
             <p className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-2">Data</p>
             <div className="flex gap-2">
-              <Button onClick={onExportData} variant="outline" size="sm"
-                className="flex-1 h-8 text-xs">
+              <Button
+                onClick={() => {
+                  const defaultName = `timespast-session-${new Date().toISOString().split('T')[0]}`;
+                  const fileName = window.prompt("Name your export file:", defaultName);
+                  if (fileName) onExportData(fileName.trim());
+                }}
+                variant="outline" size="sm"
+                className="flex-1 h-8 text-xs"
+              >
                 <Upload className="w-3 h-3 mr-1" /> Export
               </Button>
               <Button onClick={onImportData} variant="outline" size="sm"

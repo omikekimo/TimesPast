@@ -3,8 +3,8 @@ export const sessionBlobKey = (id) => `timespast_session_${id}`;
 /**
  * Builds the data object that gets persisted for a session.
  */
-export function buildSessionSnapshot({ events, notes, groups, activeLayers, timeRange }) {
-  return { events, notes, groups, activeLayers, timeRange };
+export function buildSessionSnapshot({ events, notes, groups, activeLayers, timeRange, polygons }) {
+  return { events, notes, groups, activeLayers, timeRange, polygons };
 }
 
 /**

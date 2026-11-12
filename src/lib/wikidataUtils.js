@@ -18,7 +18,7 @@ const WIKIDATA_SPARQL   = 'https://query.wikidata.org/sparql';
 // ── 1. Text → candidate entities (disambiguation list) ───────────────────────
 // Returns up to `limit` candidates so the user can pick the right one.
 // Each candidate: { qid, label, description, url }
-export async function resolveTextToEntities(text, { limit = 5, con } = {}) {
+export async function resolveTextToEntities(text, { limit = 30, con } = {}) {
   con?.log(`[wikidata] resolving "${text}"…`);
   const url = `${WIKIDATA_API}?action=wbsearchentities`
     + `&search=${encodeURIComponent(text)}`
@@ -476,4 +476,320 @@ export function buildEventPins(eventData, label, groupId, groupColor, wikipediaU
   }
 
   return pins;
+}
+// ── Organisation search ───────────────────────────────────────────────────────
+
+/**
+ * Property definitions for an organisation profile.
+ * Pass to fetchEntityProfile to get a structured org profile.
+ */
+export const ORG_PROFILE_PROPS = [
+  { id: 'P571', label: 'Founded',            type: 'date'   },
+  { id: 'P576', label: 'Dissolved',          type: 'date'   },
+  { id: 'P740', label: 'Formation location', type: 'place'  },
+  { id: 'P159', label: 'Headquarters',       type: 'place'  },
+  { id: 'P112', label: 'Founder',            type: 'person' },
+  { id: 'P169', label: 'Chief executive',    type: 'person' },
+  { id: 'P856', label: 'Website',            type: 'url'    },
+  { id: 'P17',  label: 'Country',            type: 'place'  },
+  { id: 'P452', label: 'Industry',           type: 'string' },
+  { id: 'P154', label: 'Logo',               type: 'image'  },
+];
+
+/**
+ * Fetch map pins for an organisation.
+ * Tries P740 (location of formation) first; falls back to P159 (headquarters).
+ * Uses P571 (inception date) for the founding pin, P576 (dissolution) for the closing pin.
+ * Returns { pins, orgName, wikipediaUrl } — no IDs; caller stamps them.
+ */
+export async function buildOrgSearchPins(qid, orgName, { con } = {}) {
+  const sparqlQuery = `
+    SELECT ?itemLabel ?wikipediaUrl ?inceptionDate ?dissolutionDate
+           ?formationPlace ?formationPlaceLabel ?formationPlaceCoords
+           ?hqPlace ?hqPlaceLabel ?hqPlaceCoords
+    WHERE {
+      OPTIONAL {
+        ?article schema:about wd:${qid};
+                 schema:isPartOf <https://en.wikipedia.org/>;
+                 schema:name ?wikiTitle.
+        BIND(IRI(CONCAT("https://en.wikipedia.org/wiki/", ENCODE_FOR_URI(?wikiTitle))) AS ?wikipediaUrl)
+      }
+      OPTIONAL { wd:${qid} wdt:P571 ?inceptionDate . }
+      OPTIONAL { wd:${qid} wdt:P576 ?dissolutionDate . }
+      OPTIONAL {
+        wd:${qid} wdt:P740 ?formationPlace .
+        OPTIONAL { ?formationPlace wdt:P625 ?formationPlaceCoords . }
+      }
+      OPTIONAL {
+        wd:${qid} wdt:P159 ?hqPlace .
+        OPTIONAL { ?hqPlace wdt:P625 ?hqPlaceCoords . }
+      }
+      SERVICE wikibase:label { bd:serviceParam wikibase:language "[AUTO_LANGUAGE],en". }
+    } LIMIT 1`;
+
+  const endpointUrl = `https://query.wikidata.org/sparql?query=${encodeURIComponent(sparqlQuery)}&format=json`;
+  con?.log(`[sparql] org search: "${orgName}"`);
+
+  const response = await fetch(endpointUrl, { headers: { Accept: 'application/sparql-results+json' } });
+  if (!response.ok) throw new Error(`SPARQL error: ${response.statusText}`);
+  const data    = await response.json();
+  const results = data.results.bindings;
+  if (!results.length) return { pins: [], orgName, wikipediaUrl: null };
+
+  const row          = results[0];
+  const resolvedName = row.itemLabel?.value || orgName;
+  const wikipediaUrl = row.wikipediaUrl?.value
+    || `https://en.wikipedia.org/wiki/${encodeURIComponent(resolvedName)}`;
+
+  // ── Resolve location: P740 inline coords → P740 entity → P159 inline → P159 entity ──
+  let latitude = 0, longitude = 0, locationDescription = resolvedName;
+
+  const parseCoordsString = (pointStr) => {
+    if (!pointStr) return null;
+    const parts = pointStr.replace('Point(', '').replace(')', '').split(' ');
+    return { lng: parseFloat(parts[0]), lat: parseFloat(parts[1]) };
+  };
+
+  const formationCoordsVal = row.formationPlaceCoords?.value;
+  const hqCoordsVal        = row.hqPlaceCoords?.value;
+
+  if (formationCoordsVal) {
+    const c = parseCoordsString(formationCoordsVal);
+    if (c) { latitude = c.lat; longitude = c.lng; locationDescription = row.formationPlaceLabel?.value || 'Formation location'; }
+  } else if (hqCoordsVal) {
+    const c = parseCoordsString(hqCoordsVal);
+    if (c) { latitude = c.lat; longitude = c.lng; locationDescription = row.hqPlaceLabel?.value || 'Headquarters'; }
+  } else if (row.formationPlace?.value) {
+    const formationQid = row.formationPlace.value.split('/').pop();
+    const resolved     = await resolveEntityCoordinates(formationQid, { con });
+    if (resolved) { latitude = resolved.lat; longitude = resolved.lng; locationDescription = row.formationPlaceLabel?.value || 'Formation location'; }
+  } else if (row.hqPlace?.value) {
+    const hqQid    = row.hqPlace.value.split('/').pop();
+    const resolved = await resolveEntityCoordinates(hqQid, { con });
+    if (resolved) { latitude = resolved.lat; longitude = resolved.lng; locationDescription = row.hqPlaceLabel?.value || 'Headquarters'; }
+  }
+
+  // ── Build pins ────────────────────────────────────────────────────────────────
+  const pins = [];
+
+  if (row.inceptionDate?.value) {
+    const datePart    = parseSparqlDate(row.inceptionDate.value);
+    const inceptionYear = datePartToYear(datePart);
+    if (inceptionYear) {
+      pins.push({
+        title:        `${resolvedName} — Founded`,
+        description:  `${resolvedName} founded in ${locationDescription}.`,
+        year:         inceptionYear,
+        date:         { start: datePart, end: null },
+        latitude, longitude,
+        category:     'organisations',
+        significance: 'national',
+        source:       'Wikidata SPARQL',
+        wikipedia_url: wikipediaUrl,
+      });
+    }
+  }
+
+  if (row.dissolutionDate?.value) {
+    const datePart       = parseSparqlDate(row.dissolutionDate.value);
+    const dissolutionYear = datePartToYear(datePart);
+    if (dissolutionYear) {
+      pins.push({
+        title:        `${resolvedName} — Dissolved`,
+        description:  `${resolvedName} dissolved.`,
+        year:         dissolutionYear,
+        date:         { start: datePart, end: null },
+        latitude, longitude,
+        category:     'organisations',
+        significance: 'national',
+        source:       'Wikidata SPARQL',
+        wikipedia_url: wikipediaUrl,
+      });
+    }
+  }
+
+  // If no dated pins but we have a location, make an undated location pin
+  if (pins.length === 0 && (latitude !== 0 || longitude !== 0)) {
+    pins.push({
+      title:        resolvedName,
+      description:  `${resolvedName} — location: ${locationDescription}.`,
+      year:         new Date().getFullYear(),
+      date:         null,
+      latitude, longitude,
+      category:     'organisations',
+      significance: 'national',
+      source:       'Wikidata SPARQL',
+      wikipedia_url: wikipediaUrl,
+    });
+  }
+
+  return { pins, orgName: resolvedName, wikipediaUrl };
+}
+
+// ── People profile ────────────────────────────────────────────────────────────
+
+export const PERSON_PROFILE_PROPS = [
+  { id: 'P18',  label: 'Portrait',       type: 'image'  },
+  { id: 'P569', label: 'Born',           type: 'date'   },
+  { id: 'P570', label: 'Died',           type: 'date'   },
+  { id: 'P19',  label: 'Place of birth', type: 'place'  },
+  { id: 'P20',  label: 'Place of death', type: 'place'  },
+  { id: 'P27',  label: 'Nationality',    type: 'place'  },
+  { id: 'P106', label: 'Occupation',     type: 'string' },
+  { id: 'P21',  label: 'Gender',         type: 'string' },
+  { id: 'P26',  label: 'Spouse',         type: 'person' },
+  { id: 'P22',  label: 'Father',         type: 'person' },
+  { id: 'P25',  label: 'Mother',         type: 'person' },
+  { id: 'P40',  label: 'Children',       type: 'person' },
+  { id: 'P69',  label: 'Educated at',    type: 'string' },
+  { id: 'P166', label: 'Awards',         type: 'string' },
+];
+
+/**
+ * Generic entity profile fetcher.
+ * propDefs: array of { id: 'P571', label: 'Founded', type: 'date' }
+ * Returns { properties: [{ id, label, type, values: [{ display, raw }] }] }
+ * Reuse for people (PERSON_PROFILE_PROPS), places, etc. by passing different propDefs.
+ */
+export async function fetchEntityProfile(qid, propDefs, { con } = {}) {
+  const pids = propDefs.map(p => p.id);
+  con?.log(`[sparql] fetching profile for ${qid} (${propDefs.length} properties)`);
+
+  const rows = await fetchEntityProperties(qid, pids, { con });
+  if (!rows?.length) return { properties: [] };
+
+  // Collect all unique values per property across all SPARQL rows
+  const valuesByPropId = {};
+
+  rows.forEach(row => {
+    propDefs.forEach(def => {
+      const rawBinding   = row[`p${def.id}`];
+      const labelBinding = row[`p${def.id}Label`];
+      if (!rawBinding?.value) return;
+
+      if (!valuesByPropId[def.id]) valuesByPropId[def.id] = [];
+
+      const rawValue  = rawBinding.value;
+      const alreadyIn = valuesByPropId[def.id].some(v => v.raw === rawValue);
+      if (alreadyIn) return; // deduplicate
+
+      // Format display value based on type hint
+      let displayValue = labelBinding?.value || rawValue;
+
+      if (def.type === 'date' && rawValue.match(/^-?\d{4}/)) {
+        const datePart  = parseSparqlDate(rawValue);
+        const yearValue = datePartToYear(datePart);
+        if (yearValue) displayValue = String(yearValue);
+      }
+      if (def.type === 'image' || def.type === 'url') {
+        displayValue = rawValue; // keep raw URL — renderer will handle it
+      }
+
+      valuesByPropId[def.id].push({ display: displayValue, raw: rawValue });
+    });
+  });
+
+  const properties = propDefs
+    .map(def => {
+      const values = valuesByPropId[def.id];
+      if (!values?.length) return null;
+      return { id: def.id, label: def.label, type: def.type || 'string', values };
+    })
+    .filter(Boolean);
+
+  return { properties };
+}
+// ── Living entity profile properties ─────────────────────────────────────────
+export const LIVING_ENTITY_PROFILE_PROPS = [
+  { id: 'P18',   label: 'Image',               type: 'image'  },
+  { id: 'P2567', label: 'Common name',          type: 'string' },
+  { id: 'P225',  label: 'Taxon name',           type: 'string' },
+  { id: 'P105',  label: 'Taxon rank',           type: 'string' },
+  { id: 'P171',  label: 'Parent taxon',         type: 'string' },
+  { id: 'P141',  label: 'Conservation status',  type: 'string' },
+  { id: 'P183',  label: 'Endemic to',           type: 'place'  },
+  { id: 'P569',  label: 'Born / hatched',       type: 'date'   },
+  { id: 'P570',  label: 'Died',                 type: 'date'   },
+  { id: 'P19',   label: 'Place of origin',      type: 'place'  },
+  { id: 'P17',   label: 'Country',              type: 'place'  },
+];
+
+// ── Living entity individual pin builder ──────────────────────────────────────
+// Works like buildPeopleSearchPins but uses animal-relevant place properties
+// and returns entityName (not personName) in its result object.
+export async function buildLivingEntityPins(qid, searchTerm, { con } = {}) {
+  con?.log(`[wikidata] building living entity pins for ${qid}…`);
+
+  const propDefs = [
+    { id: 'P569', label: 'Born / hatched', sparqlVar: 'birthDate', placeId: 'P19', placeVar: 'originPlace' },
+    { id: 'P570', label: 'Died',           sparqlVar: 'deathDate', placeId: 'P20', placeVar: 'deathPlace'  },
+  ];
+
+  let selectClause = 'SELECT ?itemLabel ?wikipediaUrl';
+  let whereClause  = `
+    OPTIONAL {
+      ?article schema:about wd:${qid};
+               schema:isPartOf <https://en.wikipedia.org/>;
+               schema:name ?wikipediaTitle.
+      BIND(IRI(CONCAT("https://en.wikipedia.org/wiki/", ENCODE_FOR_URI(?wikipediaTitle))) AS ?wikipediaUrl)
+    }`;
+
+  propDefs.forEach(prop => {
+    selectClause += ` ?${prop.sparqlVar}`;
+    if (prop.placeVar) selectClause += ` ?${prop.placeVar}Label ?${prop.placeVar}Coords`;
+    whereClause += `
+      OPTIONAL {
+        wd:${qid} wdt:${prop.id} ?${prop.sparqlVar}.
+        ${prop.placeVar ? `OPTIONAL {
+          wd:${qid} wdt:${prop.placeId} ?${prop.placeVar}.
+          ?${prop.placeVar} wdt:P625 ?${prop.placeVar}Coords.
+        }` : ''}
+      }`;
+  });
+
+  const sparqlQuery = `${selectClause} WHERE { ${whereClause} SERVICE wikibase:label { bd:serviceParam wikibase:language "[AUTO_LANGUAGE],en". } } LIMIT 1`;
+  const endpointUrl = `https://query.wikidata.org/sparql?query=${encodeURIComponent(sparqlQuery)}&format=json`;
+  const queryResponse = await fetch(endpointUrl, { headers: { Accept: 'application/sparql-results+json' } });
+  if (!queryResponse.ok) throw new Error(`SPARQL error: ${queryResponse.statusText}`);
+  const queryData = await queryResponse.json();
+  const results   = queryData.results.bindings;
+  if (!results.length) return { pins: [], entityName: searchTerm, wikipediaUrl: null };
+
+  const row          = results[0];
+  const entityName   = row.itemLabel?.value || searchTerm;
+  const wikipediaUrl = row.wikipediaUrl?.value || `https://en.wikipedia.org/wiki/${encodeURIComponent(entityName)}`;
+  const pins         = [];
+
+  propDefs.forEach(prop => {
+    if (!row[prop.sparqlVar]) return;
+    const datePart = parseSparqlDate(row[prop.sparqlVar].value);
+    const year     = datePartToYear(datePart);
+    if (!year) return;
+
+    let latitude = 0, longitude = 0, locationDescription = 'an unknown location';
+    if (prop.placeVar) {
+      const coordsBinding = row[`${prop.placeVar}Coords`];
+      if (coordsBinding?.value) {
+        const parts = coordsBinding.value.replace('Point(', '').replace(')', '').split(' ');
+        longitude = parseFloat(parts[0]);
+        latitude  = parseFloat(parts[1]);
+      }
+      const labelBinding = row[`${prop.placeVar}Label`];
+      if (labelBinding?.value) locationDescription = labelBinding.value;
+    }
+
+    pins.push({
+      title:        `${entityName} — ${prop.label}`,
+      description:  `${prop.label} of ${entityName}${prop.placeVar ? ` in ${locationDescription}` : ''}.`,
+      year,
+      date:         { start: datePart, end: null },
+      latitude,     longitude,
+      category:     'livingEntities',
+      significance: 'global',
+      source:       'Wikidata SPARQL',
+      wikipedia_url: wikipediaUrl,
+    });
+  });
+
+  return { pins, entityName, wikipediaUrl };
 }

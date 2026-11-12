@@ -136,9 +136,11 @@ function YearInput({ value, onChange, label, otherValue, isFrom }) {
 
 // ── Custom dual-handle drag slider ────────────────────────────────────────────
 // Uses a single container div + pointer events to avoid the stacked-input problem.
-function DualRangeSlider({ min, max, start, end, onChange }) {
+function DualRangeSlider({ min, max, start, end, onChange, pinYear, onPinYearChange, hasPinData }) {
   const trackRef  = useRef(null);
   const dragging  = useRef(null); // "start" | "end" | null
+  const pinRef      = useRef(null);
+  const pinDragging = useRef(false);
   const THUMB_R   = 8; // px, half thumb width
 
   const pct = useCallback((v) => {
@@ -185,41 +187,116 @@ function DualRangeSlider({ min, max, start, end, onChange }) {
     dragging.current = null;
   }, []);
 
+  // ── Pin handle drag ───────────────────────────────────────────────────────
+  const onPinPointerDown = useCallback((e) => {
+    pinDragging.current = true;
+    pinRef.current.setPointerCapture(e.pointerId);
+    e.stopPropagation();
+    e.preventDefault();
+  }, []);
+
+  const onPinPointerMove = useCallback((e) => {
+    if (!pinDragging.current || !onPinYearChange) return;
+    const v = Math.min(Math.max(valueFromPct(pctFromEvent(e)), min), max);
+    if (v !== pinYear) onPinYearChange(v);
+    e.preventDefault();
+  }, [pinYear, onPinYearChange, min, max, pctFromEvent, valueFromPct]);
+
+  const onPinPointerUp = useCallback(() => { pinDragging.current = false; }, []);
+
+  const pinPct = (pinYear !== undefined && onPinYearChange) ? pct(pinYear) : null;
+
   const startPct = pct(start);
   const endPct   = pct(end);
 
+    const pinFill   = hasPinData ? '#f97316' : '#9ca3af';
+  const pinStroke = hasPinData ? '#ea580c' : '#6b7280';
+  const pinTip    = hasPinData ? `Pin year: ${pinYear}` : 'No suitable data';
+
   return (
-    <div
-      ref={trackRef}
-      className="relative h-6 flex items-center cursor-pointer select-none"
-      onPointerDown={onPointerDown}
-      onPointerMove={onPointerMove}
-      onPointerUp={onPointerUp}
-      onPointerLeave={onPointerUp}
-    >
-      {/* Track background */}
-      <div className="absolute inset-x-0 h-2 bg-gray-200 rounded-full" />
-      {/* Active range highlight */}
+    <div className="relative">
+
+      {/* ── Pin handle — upside-down teardrop ──────────────────────────── */}
+      {pinPct !== null && (
+        <div className="relative h-9" style={{ pointerEvents: 'none' }}>
+
+          {/* Teardrop body */}
+          <div
+            ref={pinRef}
+            title={pinTip}
+            className="absolute"
+            style={{
+              left:          `calc(${pinPct}% - 9px)`,
+              bottom:        4,
+              cursor:        'grab',
+              pointerEvents: 'all',
+              zIndex:        10,
+            }}
+            onPointerDown={onPinPointerDown}
+            onPointerMove={onPinPointerMove}
+            onPointerUp={onPinPointerUp}
+            onPointerLeave={onPinPointerUp}
+          >
+            <svg width="18" height="26" viewBox="0 0 18 26" fill="none">
+              <path
+                d="M 9 1 C 4.5 1, 1 4.5, 1 9 C 1 15, 9 25, 9 25 C 9 25, 17 15, 17 9 C 17 4.5, 13.5 1, 9 1 Z"
+                fill={pinFill}
+                stroke={pinStroke}
+                strokeWidth="1.5"
+              />
+              <circle cx="9" cy="9" r="3" fill="white" opacity="0.8" />
+            </svg>
+          </div>
+
+          {/* Stem connecting teardrop point to track line */}
+          <div
+            className="absolute"
+            style={{
+              left:            `${pinPct}%`,
+              bottom:          0,
+              width:           1,
+              height:          4,
+              backgroundColor: pinFill,
+              transform:       'translateX(-50%)',
+              pointerEvents:   'none',
+            }}
+          />
+        </div>
+      )}
+
+      {/* ── Original track ─────────────────────────────────────────────── */}
       <div
-        className="absolute h-2 bg-blue-500 rounded-full"
-        style={{ left: `${startPct}%`, width: `${Math.max(0, endPct - startPct)}%` }}
-      />
-      {/* Start thumb */}
-      <div
-        className="absolute w-4 h-4 bg-white border-2 border-blue-500 rounded-full shadow-md"
-        style={{ left: `calc(${startPct}% - ${THUMB_R}px)`, zIndex: 2 }}
-      />
-      {/* End thumb */}
-      <div
-        className="absolute w-4 h-4 bg-white border-2 border-blue-600 rounded-full shadow-md"
-        style={{ left: `calc(${endPct}% - ${THUMB_R}px)`, zIndex: 2 }}
-      />
+        ref={trackRef}
+        className="relative h-6 flex items-center cursor-pointer select-none"
+        onPointerDown={onPointerDown}
+        onPointerMove={onPointerMove}
+        onPointerUp={onPointerUp}
+        onPointerLeave={onPointerUp}
+      >
+        {/* Track background */}
+        <div className="absolute inset-x-0 h-2 bg-gray-200 rounded-full" />
+        {/* Active range highlight */}
+        <div
+          className="absolute h-2 bg-blue-500 rounded-full"
+          style={{ left: `${startPct}%`, width: `${Math.max(0, endPct - startPct)}%` }}
+        />
+        {/* Start thumb */}
+        <div
+          className="absolute w-4 h-4 bg-white border-2 border-blue-500 rounded-full shadow-md"
+          style={{ left: `calc(${startPct}% - ${THUMB_R}px)`, zIndex: 2 }}
+        />
+        {/* End thumb */}
+        <div
+          className="absolute w-4 h-4 bg-white border-2 border-blue-600 rounded-full shadow-md"
+          style={{ left: `calc(${endPct}% - ${THUMB_R}px)`, zIndex: 2 }}
+        />
+      </div>
     </div>
   );
 }
 
 // ── Main component ────────────────────────────────────────────────────────────
-export default function TimelineSlider({ timeRange, onTimeRangeChange, eventCount }) {
+export default function TimelineSlider({ timeRange, onTimeRangeChange, eventCount, pinYear, onPinYearChange, hasPinData }) {
   const [dismissedPeriods, setDismissedPeriods] = useState(new Set());
   const [windowMin, setWindowMin] = useState(() => Math.min(timeRange.start, -3000));
   const [windowMax, setWindowMax] = useState(() => Math.max(timeRange.end, ABS_MAX));
@@ -310,12 +387,15 @@ export default function TimelineSlider({ timeRange, onTimeRangeChange, eventCoun
 
       {/* Dual-handle drag slider */}
       <div className="relative px-1">
-        <DualRangeSlider
+               <DualRangeSlider
           min={windowMin}
           max={windowMax}
           start={startVal}
           end={endVal}
           onChange={onTimeRangeChange}
+          pinYear={pinYear}
+          onPinYearChange={onPinYearChange}
+          hasPinData={hasPinData}
         />
 
         {/* Ticks */}

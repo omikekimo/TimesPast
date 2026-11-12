@@ -33,6 +33,11 @@ export default function DataTimelineControls({
   notes = [],
   onSelectNote,
   onImportNotes,
+  polygons = [],
+  onRemovePolygon,
+  pinYear,
+  onPinYearChange,
+  hasPinData,
 
 }) {
   const [rightTab, setRightTab] = useState("layers"); // "layers" | "spreadsheet"
@@ -80,10 +85,13 @@ export default function DataTimelineControls({
         <CardContent className="flex flex-row gap-6">
           {/* ── Left: Timeline ── */}
           <div className="flex-[3] space-y-3 min-w-0">
-            <TimelineSlider
+                        <TimelineSlider
               timeRange={timeRange}
               onTimeRangeChange={onTimeRangeChange}
               eventCount={eventCount}
+              pinYear={pinYear}
+              onPinYearChange={onPinYearChange}
+              hasPinData={hasPinData}
             />
 
             {/* Add Pin */}
@@ -153,6 +161,8 @@ export default function DataTimelineControls({
                   onStartPickLocation={onStartPickLocation}
                   groups={groups}        // <-- add this one line
                   onRenameGroup={onRenameGroup}
+                  polygons={polygons}
+                  onRemovePolygon={onRemovePolygon}
                 />
               </>
             )}

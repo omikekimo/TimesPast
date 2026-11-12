@@ -13,8 +13,8 @@ const sections = [
     label: 'Agents',
     layers: [
       { id: 'people',           label: 'People',            icon: Users,    color: 'bg-amber-100 text-amber-800',   hasSearch: true  },
-      { id: 'organisations',    label: 'Organisations',     icon: Building2,color: 'bg-orange-100 text-orange-800', hasSearch: false },
-      { id: 'livingEntities',   label: 'Living Entities',   icon: Leaf,     color: 'bg-lime-100 text-lime-800',     hasSearch: false },
+      { id: 'organisations',    label: 'Organisations',     icon: Building2,color: 'bg-orange-100 text-orange-800', hasSearch: true },
+      { id: 'livingEntities',   label: 'Living Entities',   icon: Leaf,     color: 'bg-lime-100 text-lime-800',     hasSearch: true },
       { id: 'artificialAgents', label: 'Artificial Agents', icon: Bot,      color: 'bg-sky-100 text-sky-800',       hasSearch: false },
     ],
   },
@@ -172,7 +172,7 @@ export default function LayerSwitcher({ activeLayers, onLayerToggle, openPanels,
         <p className="text-xs text-gray-500 mt-1">
           Multiple layers can be active simultaneously for cross-analysis
         </p>
-        <img src="public/tplogo.png" style={{ width: '30%', height: 'auto' }} />
+        <img src="tplogo.png" style={{ width: '30%', height: 'auto' }} />
       </div>
     </div>
   );

@@ -97,11 +97,13 @@ export default function DataLayerPanel({
   onStartPickLocation,
   groups = [],
   onRenameGroup,
+  polygons = [],
+  onRemovePolygon,
 }) {
   const [editingEvent, setEditingEvent] = useState(null);
   const [collapsed, setCollapsed]       = useState({});
 
-  if (events.length === 0 && notes.length === 0) {
+  if (events.length === 0 && notes.length === 0 && polygons.length === 0) {
     return (
       <div className="text-center py-8 text-gray-500">
         <Layers className="w-8 h-8 mx-auto mb-2 opacity-50" />
@@ -242,6 +244,36 @@ const orphanNotes   = notes.filter(n => !n.parent_pin_id || !eventIds.has(n.pare
           {orphanNotes.map(note => (
             <NoteRow key={note.id} note={note} onSelectNote={onSelectNote} />
           ))}
+        </div>
+      )}
+
+            {/* ── Range overlays (species polygons) ── */}
+      {polygons.length > 0 && (
+        <div className="mt-2 pt-2 border-t border-gray-100">
+          <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider px-1 mb-1">
+            Range Overlays
+          </p>
+          <div className="flex flex-col gap-0.5">
+            {polygons.map(poly => (
+              <div key={poly.id}
+                className="flex items-center justify-between px-2 py-1 rounded-lg hover:bg-gray-50 transition-colors">
+                <div className="flex items-center gap-2 min-w-0">
+                  <div className="w-2.5 h-2.5 rounded-full flex-shrink-0"
+                    style={{ backgroundColor: poly.color }} />
+                  <div className="flex-1 min-w-0">
+                    <p className="text-xs font-medium text-gray-700 truncate">{poly.label}</p>
+                    <p className="text-[10px] text-gray-400 uppercase">{poly.source} range</p>
+                  </div>
+                </div>
+                <button
+                  onClick={() => onRemovePolygon?.(poly.id)}
+                  className="p-1 rounded hover:bg-red-100 transition-colors flex-shrink-0"
+                  title="Remove overlay">
+                  <Trash2 className="w-3 h-3 text-gray-300 hover:text-red-400" />
+                </button>
+              </div>
+            ))}
+          </div>
         </div>
       )}
 

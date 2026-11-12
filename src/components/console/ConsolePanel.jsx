@@ -35,7 +35,7 @@ const SIZES = [
   { label: '14', value: '14px' },
 ];
 
-export default function ConsolePanel({ appState, setAppState, handlers, onClose }) {
+export default function ConsolePanel({ runCommand, onClose }) {
   const con = useConsole();
 
   const [input, setInput]     = useState('');
@@ -50,6 +50,16 @@ export default function ConsolePanel({ appState, setAppState, handlers, onClose 
   const inputRef      = useRef(null);
   const outputRef     = useRef(null);   // the raw DOM div we write into
   const lineCountRef  = useRef(0);      // how many lines we've already written
+
+    // ── Pending prompt — set while a command is awaiting user input ───────────
+  const [pendingPrompt, setPendingPrompt] = useState(null);
+
+  const askFn = useCallback((promptText) => {
+    return new Promise((resolve) => {
+      con.log(promptText);
+      setPendingPrompt({ resolve });
+    });
+  }, [con]);
 
   // ── Write new lines directly to the DOM ───────────────────────────────────
   // This completely bypasses React's reconciliation for the output area.
@@ -97,27 +107,19 @@ export default function ConsolePanel({ appState, setAppState, handlers, onClose 
   const runInput = (raw) => {
     const trimmed = raw.trim();
     if (!trimmed) return;
-    con.push(trimmed, LEVELS.CMD);
+
+    // If a command is suspended waiting for input, route the answer back to it
+    if (pendingPrompt) {
+      con.push(trimmed, LEVELS.CMD);
+      const resolver = pendingPrompt.resolve;
+      setPendingPrompt(null);
+      resolver(trimmed);
+      return;
+    }
+
     setHistory(h => [trimmed, ...h].slice(0, 50));
     setHistIdx(-1);
-
-    if (trimmed.toLowerCase() === 'help') {
-      getAllCommands().forEach(cmd => {
-        con.log(`  ${cmd.name.padEnd(12)} — ${cmd.description}  (usage: ${cmd.usage})`);
-      });
-      return;
-    }
-
-    const cmd = getCommand(trimmed);
-    if (!cmd) {
-      con.error(`Unknown command: "${trimmed.split(' ')[0]}". Type "help".`);
-      return;
-    }
-    try {
-      cmd.run({ console: con, appState, setAppState, handlers, rawInput: trimmed });
-    } catch (err) {
-      con.error(`Command error: ${err.message}`);
-    }
+    runCommand(trimmed, { ask: askFn });
   };
 
   const handleKeyDown = (e) => {

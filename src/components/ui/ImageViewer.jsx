@@ -1,4 +1,5 @@
  import React from 'react';
+ import ReactDOM from 'react-dom';
 import { X, ExternalLink } from 'lucide-react';
 import DraggablePanel from './DraggablePanel';
 
@@ -11,7 +12,7 @@ function isImageUrl(url) {
 export default function ImageViewer({ imageUrl, title, onClose }) {
   if (!imageUrl) return null;
 
-  return (
+  return ReactDOM.createPortal(
     <DraggablePanel
       initialPosition={{ x: Math.max(40, window.innerWidth / 2 - 300), y: 80 }}
       dragHandleClassName="drag-handle"
@@ -52,7 +53,7 @@ export default function ImageViewer({ imageUrl, title, onClose }) {
 
       </div>
     </DraggablePanel>
-  );
+  , document.body);
 }
 
 export { isImageUrl };

@@ -2,16 +2,18 @@ import React, { useState, useRef } from "react";
 import { Download, Upload, Search, ChevronUp, ChevronDown, Pencil, Check, X, StickyNote } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { formatPinDate } from "@/lib/dateUtils";
-import { dateToCsvString, dateToCsvTimeString, csvStringToDate, datePartToYear } from "@/lib/dateUtils";
+import { csvStringToDate, datePartToYear } from "@/lib/dateUtils";
+import { eventsToCSV, notesToCSVBlocks } from "@/lib/csvExport";
 
-// ── Note block tokens ─────────────────────────────────────────────────────────
-const NOTE_START = '##NOTE_START##';
-const NOTE_END   = '##NOTE_END##';
+const NOTE_START = "##NOTE_START##";
+const NOTE_END   = "##NOTE_END##";
+
+
 
 // ── Event columns ─────────────────────────────────────────────────────────────
 const HUMAN_COLUMNS = [
   { key: "title",        label: "Title" },
-  { key: "date",         label: "Date",         format: d => d ? dateToCsvString(d) : "" },
+  { key: "date",         label: "Date",         format: d => d ? formatPinDate(d) : "" },
   { key: "dateTime",     label: "Time" },
   { key: "category",     label: "Category",     format: v => v ? v.charAt(0).toUpperCase() + v.slice(1).replace("_", " ") : "" },
   { key: "significance", label: "Significance", format: v => v ? v.charAt(0).toUpperCase() + v.slice(1) : "" },
@@ -26,13 +28,6 @@ const HUMAN_COLUMNS = [
   { key: "id",           label: "ID (internal)" },
 ];
 
-// ── CSV value escaping ────────────────────────────────────────────────────────
-function toCSVValue(v) {
-  if (v == null) return "";
-  const s = String(v);
-  if (s.includes(",") || s.includes('"') || s.includes("\n")) return `"${s.replace(/"/g, '""')}"`;
-  return s;
-}
 
 // ── Robust CSV line parser ────────────────────────────────────────────────────
 function parseCSVLine(line) {
@@ -53,56 +48,9 @@ function parseCSVLine(line) {
   return vals;
 }
 
-// ── Events → CSV rows ─────────────────────────────────────────────────────────
-function eventsToCSV(events) {
-  const header = HUMAN_COLUMNS.map(c => c.label).join(",");
-  const rows   = events.map(e =>
-    HUMAN_COLUMNS.map(c => {
-      if (c.key === "date")     return toCSVValue(dateToCsvString(e.date) ?? "");
-      if (c.key === "dateTime") return toCSVValue(dateToCsvTimeString(e.date) ?? "");
-      const raw     = e[c.key];
-      const display = c.format ? c.format(raw) : (raw ?? "");
-      return toCSVValue(display ?? "");
-    }).join(",")
-  );
-  return [header, ...rows].join("\n");
-}
 
-// ── Notes → CSV blocks ────────────────────────────────────────────────────────
-function notesToCSVBlocks(notes) {
-  if (!notes?.length) return "";
-  return notes.map(note => {
-    const header = [
-      NOTE_START,
-      note.title        || "",
-      note.entity_label || "",
-      note.parent_pin_id || "",
-      note.search_group  || "",
-      note.search_color  || "",
-      note.created_at    || "",
-    ].map(toCSVValue).join(",");
 
-    const bindingHeader = "RowIndex,Property,Label,Value,Type";
 
-    const bindingRows = [];
-    (note.rows || []).forEach((row, rowIdx) => {
-      Object.entries(row)
-        .filter(([key]) => !key.endsWith("Label"))
-        .forEach(([key, binding]) => {
-          const label = row[`${key}Label`]?.value || "";
-          bindingRows.push([
-            rowIdx,
-            toCSVValue(key),
-            toCSVValue(label),
-            toCSVValue(binding.value || ""),
-            toCSVValue(binding.type  || ""),
-          ].join(","));
-        });
-    });
-
-    return [header, bindingHeader, ...bindingRows, NOTE_END].join("\n");
-  }).join("\n");
-}
 
 // ── Parse CSV text → events + notes ──────────────────────────────────────────
 function parseCSVFull(text) {

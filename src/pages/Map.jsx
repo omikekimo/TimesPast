@@ -1,5 +1,5 @@
-import React, { useState, useEffect, useCallback, useContext, useRef } from "react";
-import { MapContainer, TileLayer, Marker, Popup, Polyline, useMap, useMapEvents } from "react-leaflet";
+import React, { useState, useEffect, useCallback, useContext, useRef, useMemo } from "react";
+import { MapContainer, TileLayer, Marker, Popup, Polyline, GeoJSON, useMap, useMapEvents } from "react-leaflet";
 
 import "leaflet/dist/leaflet.css";
 import L from "leaflet";
@@ -29,6 +29,9 @@ import MobileLayout from '../components/mobile/MobileLayout';
 import SessionPanel from '../components/session/SessionPanel';
 
 import QueryResultsViewer from '../components/ui/QueryResultsViewer';
+import OrganisationSearch from '../components/layers/OrganisationSearch';
+import LivingEntitiesSearch from '../components/layers/LivingEntitiesSearch';
+import ProfileViewer from '../components/ui/ProfileViewer';
 import ImageViewer from '../components/ui/ImageViewer';
 
 import MapOptions from "../components/layers/MapOptions";
@@ -36,8 +39,36 @@ import { DEFAULT_TILE_ID, getTileProvider } from "../lib/mapConfig";
 import EditPinModal from "../components/map/EditPinModal";
 import NoteConstructor from "../components/ui/NoteConstructor";
 
+//import { useConsole }         from '@/components/console/ConsoleContext';
+import { useCommandRunner }   from '@/hooks/useCommandRunner';
+import { connectCommandSocket } from '@/lib/wsClient';
+
 // Fix for default markers in react-leaflet
 fixLeafletIcons();
+
+
+// ── Polygon helpers ───────────────────────────────────────────────────────────
+function getPolygonAnchorPoint(geojson) {
+  const feature = geojson?.features?.[0];
+  if (!feature?.geometry) return null;
+  const { type, coordinates } = feature.geometry;
+  if (type === 'Polygon')      return coordinates[0][0];
+  if (type === 'MultiPolygon') return coordinates[0][0][0];
+  if (type === 'MultiPoint')   return coordinates[0];
+  if (type === 'Point')        return coordinates;
+  return null;
+}
+
+function createPolygonAnchorIcon(color) {
+  return L.divIcon({
+    html: `<svg width="14" height="14" viewBox="0 0 14 14" xmlns="http://www.w3.org/2000/svg">
+      <circle cx="7" cy="7" r="5.5" fill="${color}" stroke="white" stroke-width="2"/>
+    </svg>`,
+    className:  '',
+    iconSize:   [14, 14],
+    iconAnchor: [7, 7],
+  });
+}
 
 function promptGroupName(defaultName = "") {
   return window.prompt("Group name:", defaultName);
@@ -73,6 +104,9 @@ function MapPageInner() {
   const [pickingLocation, setPickingLocation] = useState({ active: false, lat: null, lng: null });
   const [groups, setGroups] = useState([]);
   const [queryResults, setQueryResults] = useState(null);
+  const [profileData, setProfileData]   = useState(null);
+  const [polygons, setPolygons]         = useState([]);
+  const [pinYear, setPinYear]           = useState(new Date().getFullYear());
   const [notes, setNotes] = useState([]);
   const [editingPin, setEditingPin] = useState(null);
   const [noteTarget, setNoteTarget] = useState(null);
@@ -94,7 +128,7 @@ function MapPageInner() {
 
     const handlers = useMapHandlers({
   events, filteredEvents, notes, groups, activeLayers, timeRange, comparisonEvents,
-  lockedEventIds, markerRefs,
+  lockedEventIds, markerRefs, polygons,
   setEvents, setNotes, setGroups, setComparisonEvents,
   setHiddenEventIds, setLockedEventIds,
   setSelectedEvent, setActiveLayers,
@@ -102,8 +136,53 @@ function MapPageInner() {
   setSearchQuery, setPickingLocation,
   setIsSearching, setLayoutMode,
   setQueryResults,
+  setProfileData,
+  setPolygons,
   con,
 });
+
+      // ── appState snapshot (used by command runner) ────────────────────────────
+  const appState = useMemo(() => ({
+    events, notes, groups, activeLayers, timeRange, searchQuery, filteredEvents,
+  }), [events, notes, groups, activeLayers, timeRange, searchQuery, filteredEvents]);
+
+  const setAppState = useCallback((patch) => {
+    if ('events'       in patch) setEvents(patch.events);
+    if ('notes'        in patch) setNotes(patch.notes);
+    if ('groups'       in patch) setGroups(patch.groups);
+    if ('activeLayers' in patch) setActiveLayers(patch.activeLayers);
+    if ('timeRange'    in patch) setTimeRange(patch.timeRange);
+    if ('searchQuery'  in patch) setSearchQuery(patch.searchQuery);
+  }, [setEvents, setNotes, setGroups, setActiveLayers, setTimeRange, setSearchQuery]);
+
+  // ── command runner (shared by URL params, WebSocket, and ConsolePanel) ────
+
+  const runCommand = useCommandRunner({ appState, setAppState, handlers });
+
+  // Keep a ref so the one-time effects below always call the latest version
+  const runCommandRef = useRef(runCommand);
+  useEffect(() => { runCommandRef.current = runCommand; }, [runCommand]);
+
+  // ── URL params: ?run=search+-p+terry+pratchett ────────────────────────────
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const run    = params.get('run');
+    if (!run) return;
+    const cmds = run.split(';').map(c => c.trim()).filter(Boolean);
+    if (!cmds.length) return;
+    // Small delay so the map and handlers have finished initialising
+    const id = setTimeout(() => cmds.forEach(cmd => runCommandRef.current(cmd)), 900);
+    return () => clearTimeout(id);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // ── WebSocket stub: active when VITE_WS_URL is set in .env.local ─────────
+  //useEffect(() => {
+  //  const ws = connectCommandSocket({
+  //    onCommand: ({ raw }) => runCommandRef.current(raw),
+  //  });
+  //  return () => ws?.close();
+  //}, []); // eslint-disable-line react-hooks/exhaustive-deps
+
 
   useEffect(() => { setIsLoading(false); }, []);
 
@@ -121,7 +200,7 @@ function MapPageInner() {
   onSaveSession: handlers.handleSaveSession,
   onLoadSession: handlers.handleLoadSession,
   onClearSession: handlers.handleClearSession,
-  onExportData: () => handlers.handleExportData(getCurrentSessionInfo()),
+  onExportData: (filename) => handlers.handleExportData(getCurrentSessionInfo(), filename),
   onImportData: () => handlers.handleImportData(),
   currentSessionInfo: getCurrentSessionInfo(),
 };
@@ -222,8 +301,33 @@ function MapPageInner() {
   <DraggablePanel initialPosition={{ x: 24, y: 300 }} dragHandleClassName="drag-handle">
     <PeopleSearchPanel
       onSearch={handlers.handleSparqlSearch}
+      onProfile={handlers.handlePersonProfile}
       isSearching={isSearching}
       onClose={() => setOpenPanels(prev => prev.filter(id => id !== 'people'))}
+    />
+  </DraggablePanel>
+)}
+
+       {openPanels.includes('organisations') && activeLayers.includes('organisations') && (
+  <DraggablePanel initialPosition={{ x: 24, y: 300 }} dragHandleClassName="drag-handle">
+    <OrganisationSearch
+      onSearch={handlers.handleOrgSearch}
+      onProfile={handlers.handleOrgProfile}
+      isSearching={isSearching}
+      onClose={() => setOpenPanels(prev => prev.filter(id => id !== 'organisations'))}
+    />
+  </DraggablePanel>
+)}
+
+       {openPanels.includes('livingEntities') && activeLayers.includes('livingEntities') && (
+  <DraggablePanel initialPosition={{ x: 24, y: 300 }} dragHandleClassName="drag-handle">
+    <LivingEntitiesSearch
+      onSearch={handlers.handleLivingEntitySearch}
+      onSpeciesRange={handlers.handleSpeciesRange}
+      onProfile={handlers.handleLivingEntityProfile}
+      isSearching={isSearching}
+      onClose={() => setOpenPanels(prev => prev.filter(id => id !== 'livingEntities'))}
+
     />
   </DraggablePanel>
 )}
@@ -267,9 +371,19 @@ function MapPageInner() {
             onClearAll={handlers.handleClearAllPins}
             groups={groups} onCreateGroup={handlers.handleCreateGroup}
             onImportEvents={handlers.handleImportEvents}
-            notes={notes}
+            pinYear={pinYear}
+            onPinYearChange={setPinYear}
+            hasPinData={polygons.length > 0}
+            notes={notes.filter(note => {
+              const parentPin = note.parent_pin_id
+                ? events.find(e => e.id === note.parent_pin_id)
+                : events.find(e => note.search_group && e.search_group === note.search_group);
+              return !parentPin || activeLayers.includes(parentPin.category);
+            })}
             onSelectNote={(note) => setQueryResults({ rows: note.rows, entityLabel: note.entity_label })}
             onImportNotes={handlers.handleImportNotes}
+            polygons={activeLayers.includes('livingEntities') ? polygons : []}
+            onRemovePolygon={handlers.handleRemovePolygon}
           />
         </DraggablePanel>
 
@@ -296,6 +410,10 @@ function MapPageInner() {
   const lat = note.latitude;
   const lng = note.longitude;
   if (lat === 0 && lng === 0) return null;
+  const parentPin = note.parent_pin_id
+    ? events.find(e => e.id === note.parent_pin_id)
+    : events.find(e => note.search_group && e.search_group === note.search_group);
+  if (parentPin && !activeLayers.includes(parentPin.category)) return null;
   return (
     <Marker
       key={note.id}
@@ -326,6 +444,42 @@ function MapPageInner() {
     </Marker>
   );
 })}
+
+{/* Polygon overlays — living entities species range */}
+            {activeLayers.includes('livingEntities') && polygons.map(poly => {
+              const anchor = getPolygonAnchorPoint(poly.geojson);
+              return (
+                <React.Fragment key={poly.id}>
+                  <GeoJSON
+                    data={poly.geojson}
+                    style={() => ({
+                      color:       poly.color,
+                      weight:      2,
+                      opacity:     0.9,
+                      fillColor:   poly.color,
+                      fillOpacity: 0.15,
+                    })}
+                  />
+                  {anchor && (
+                    <Marker
+                      position={[anchor[1], anchor[0]]}
+                      icon={createPolygonAnchorIcon(poly.color)}
+                    >
+                      <Popup>
+                        <div className="p-1.5">
+                          <div className="flex items-center gap-1.5 mb-1">
+                            <span className="w-2.5 h-2.5 rounded-full flex-shrink-0"
+                              style={{ backgroundColor: poly.color }} />
+                            <p className="font-bold text-xs text-gray-900">{poly.label}</p>
+                          </div>
+                          <p className="text-[10px] text-gray-400 uppercase tracking-wide">{poly.source} range</p>
+                        </div>
+                      </Popup>
+                    </Marker>
+                  )}
+                </React.Fragment>
+              );
+            })}
 
             {/* Polylines */}
             {(() => {
@@ -465,6 +619,20 @@ function MapPageInner() {
           </DraggablePanel>
         )}
 
+          {profileData && (
+  <ProfileViewer
+    qid={profileData.qid}
+    label={profileData.label}
+    entityType={profileData.entityType}
+    properties={profileData.properties}
+    wikipediaUrl={profileData.wikipediaUrl}
+    groups={groups}
+    availablePins={filteredEvents}
+    onSaveNote={handlers.handleSaveNote}
+    onClose={() => setProfileData(null)}
+  />
+)}
+
   {queryResults && (
   <QueryResultsViewer
   results={queryResults.rows}
@@ -480,19 +648,10 @@ function MapPageInner() {
 
         {activeLayers.includes('console') && (
           <DraggablePanel initialPosition={{ x: 100, y: window.innerHeight - 420 }} dragHandleClassName="drag-handle">
-            <ConsolePanel
-  appState={{ events, notes, groups, activeLayers, timeRange, searchQuery, filteredEvents }}
-  setAppState={(patch) => {
-    if ('events'       in patch) setEvents(patch.events);
-    if ('notes'        in patch) setNotes(patch.notes);
-    if ('groups'       in patch) setGroups(patch.groups);
-    if ('activeLayers' in patch) setActiveLayers(patch.activeLayers);
-    if ('timeRange'    in patch) setTimeRange(patch.timeRange);
-    if ('searchQuery'  in patch) setSearchQuery(patch.searchQuery);
-  }}
-  handlers={handlers}
-  onClose={() => setActiveLayers(prev => prev.filter(id => id !== 'console'))}
-/>
+                    <ConsolePanel
+          runCommand={runCommand}
+          onClose={() => setActiveLayers(prev => prev.filter(id => id !== 'console'))}
+        />
           </DraggablePanel>
         )}
 

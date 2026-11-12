@@ -16,8 +16,14 @@ import {
   resolveWikipediaUrl,
   buildPeopleSearchPins,
   buildEventPins,
+  buildOrgSearchPins,
+  fetchEntityProfile,
+  ORG_PROFILE_PROPS,
+  PERSON_PROFILE_PROPS,
+  buildLivingEntityPins,
+  LIVING_ENTITY_PROFILE_PROPS,
 } from '@/lib/wikidataUtils';
-import { InvokeLLM } from '@/integrations/Core';
+import { fetchWikidataGeoshape, fetchGBIFOccurrences } from '@/lib/geoUtils';
 import { CATEGORY_DEFS } from '@/lib/mapUtils';
 import { csvRowsToEvents } from '@/lib/csvUtils';
 import { buildSessionSnapshot, saveSessionBlob, loadSessionBlob } from '@/lib/sessionUtils';
@@ -51,6 +57,7 @@ export function useMapHandlers({
   comparisonEvents,
   lockedEventIds,
   markerRefs,
+  polygons,
   // state setters
   setEvents,
   setNotes,
@@ -66,6 +73,8 @@ export function useMapHandlers({
   setIsSearching,
   setLayoutMode,
   setQueryResults,
+  setProfileData,
+  setPolygons,
   // console context
   con,
 }) {
@@ -184,10 +193,10 @@ export function useMapHandlers({
     // ── Session ───────────────────────────────────────────────────────────────
 
  const handleSaveSession = useCallback((sessionData) => {
-  const fullData = buildSessionSnapshot({ events, notes, groups, activeLayers, timeRange });
+  const fullData = buildSessionSnapshot({ events, notes, groups, activeLayers, timeRange, polygons });
   saveSessionBlob(sessionData.id, fullData);
   con?.success(`[session] saved: "${sessionData.name}" — ${events.length} pin(s), ${notes.length} note(s)`);
-}, [events, notes, groups, activeLayers, timeRange, con]);
+}, [events, notes, groups, activeLayers, timeRange, polygons, con]);
 
 const handleLoadSession = useCallback((sessionData) => {
   try {
@@ -198,6 +207,7 @@ const handleLoadSession = useCallback((sessionData) => {
       if (data.groups)       setGroups(data.groups);
       if (data.activeLayers) setActiveLayers(data.activeLayers);
       if (data.timeRange)    setTimeRange(data.timeRange);
+      if (data.polygons)     setPolygons(data.polygons);
       con?.success(`[session] loaded: "${sessionData.name}" — ${data.events?.length || 0} pin(s), ${data.notes?.length || 0} note(s)`);
     } else {
       if (sessionData.activeLayers) setActiveLayers(sessionData.activeLayers);
@@ -209,11 +219,12 @@ const handleLoadSession = useCallback((sessionData) => {
   }
 }, [setEvents, setNotes, setGroups, setActiveLayers, setTimeRange, con]);
 
-const handleExportData = useCallback((sessionInfo) => {
-  const filename = `timespast-export-${new Date().toISOString().split('T')[0]}.json`;
-  downloadJson({ events, notes, session: sessionInfo }, filename);
+const handleExportData = useCallback((sessionInfo, filenameOverride = null) => {
+  const exportData  = { events, notes, groups, session: sessionInfo };
+  const defaultName = `timespast-export-${new Date().toISOString().split('T')[0]}.json`;
+  downloadJson(exportData, filenameOverride ? `${filenameOverride}.json` : defaultName);
   con?.success('[session] data exported');
-}, [events, notes, con]);
+}, [events, notes, groups, con]);
 
 const handleImportData = useCallback(async () => {
   try {
@@ -541,6 +552,211 @@ const handlePinNote = useCallback((noteId, pinId) => {
   setNotes(prev => prev.map(n => n.id === noteId ? { ...n, parent_pin_id: pinId } : n));
 }, [setNotes]);
 
+// ── Organisation search ───────────────────────────────────────────────────
+
+  const handleOrgSearch = useCallback(async (qid, label) => {
+    if (!qid) return;
+    setIsSearching(true);
+    con?.log(`[orgs] searching: ${label} (${qid})`);
+    try {
+      const { pins, orgName, wikipediaUrl } = await buildOrgSearchPins(qid, label, { con });
+
+      if (!pins.length) {
+        con?.warn(`[orgs] no location data found for "${label}"`);
+        setIsSearching(false);
+        return;
+      }
+
+      const { groupId, groupColor } = resolveGroupForSearch(label, groups);
+
+      const pinsWithGroupFields = pins.map((pin, i) => ({
+        ...pin,
+        id:           `org_${groupId}_${i}`,
+        search_group: groupId,
+        search_color: groupColor,
+        search_query: orgName,
+      }));
+
+      setEvents(prev => [...prev, ...pinsWithGroupFields]);
+      setGroups(prev =>
+        prev.find(g => g.id === groupId)
+          ? prev
+          : [...prev, { id: groupId, name: orgName, color: groupColor }]
+      );
+      con?.success(`[orgs] added ${pinsWithGroupFields.length} pin(s) for "${orgName}"`);
+    } catch (err) {
+      con?.error(`[orgs] search failed: ${err.message}`);
+    }
+    setIsSearching(false);
+  }, [setEvents, setGroups, setIsSearching, groups, con]);
+
+  const handleOrgProfile = useCallback(async (qid, label) => {
+    if (!qid) return;
+    setIsSearching(true);
+    con?.log(`[orgs] profiling: ${label} (${qid})`);
+    try {
+      const [profileResult, wikipediaUrl] = await Promise.all([
+        fetchEntityProfile(qid, ORG_PROFILE_PROPS, { con }),
+        resolveWikipediaUrl(qid, { con }),
+      ]);
+
+      if (!profileResult.properties.length) {
+        con?.warn(`[orgs] no profile data found for "${label}"`);
+        setIsSearching(false);
+        return;
+      }
+
+      setProfileData({
+        qid,
+        label,
+        entityType: 'organisation',
+        properties: profileResult.properties,
+        wikipediaUrl,
+      });
+      con?.success(`[orgs] profile loaded for "${label}" (${profileResult.properties.length} properties)`);
+    } catch (err) {
+      con?.error(`[orgs] profile failed: ${err.message}`);
+    }
+    setIsSearching(false);
+  }, [setIsSearching, setProfileData, con]);
+
+   // ── People profile ────────────────────────────────────────────────────────
+
+  const handlePersonProfile = useCallback(async (qid, label) => {
+    if (!qid) return;
+    setIsSearching(true);
+    con?.log(`[people] profiling: ${label} (${qid})`);
+    try {
+      const [profileResult, wikipediaUrl] = await Promise.all([
+        fetchEntityProfile(qid, PERSON_PROFILE_PROPS, { con }),
+        resolveWikipediaUrl(qid, { con }),
+      ]);
+
+      if (!profileResult.properties.length) {
+        con?.warn(`[people] no profile data found for "${label}"`);
+        setIsSearching(false);
+        return;
+      }
+
+      setProfileData({
+        qid,
+        label,
+        entityType: 'person',
+        properties: profileResult.properties,
+        wikipediaUrl,
+      });
+      con?.success(`[people] profile loaded for "${label}" (${profileResult.properties.length} properties)`);
+    } catch (err) {
+      con?.error(`[people] profile failed: ${err.message}`);
+    }
+    setIsSearching(false);
+  }, [setIsSearching, setProfileData, con]);
+
+
+    // ── Living entities — individual animal search ────────────────────────────
+
+  const handleLivingEntitySearch = useCallback(async (qid, label) => {
+    if (!qid) return;
+    setIsSearching(true);
+    con?.log(`[livingEntities] individual: "${label}" (${qid})`);
+    try {
+      const { pins, entityName } = await buildLivingEntityPins(qid, label, { con });
+      if (!pins.length) {
+        con?.warn(`[livingEntities] no location/date data for "${label}"`);
+        setIsSearching(false);
+        return;
+      }
+      const { groupId, groupColor } = resolveGroupForSearch(label, groups);
+      const withIds = pins.map((p, i) => ({
+        ...p,
+        id:           `living_${groupId}_${i}`,
+        search_group: groupId,
+        search_color: groupColor,
+        search_query: label,
+      }));
+      setEvents(prev => [...prev, ...withIds]);
+      setGroups(prev =>
+        prev.find(g => g.id === groupId)
+          ? prev
+          : [...prev, { id: groupId, name: label, color: groupColor }]
+      );
+      con?.success(`[livingEntities] added ${withIds.length} pin(s) for "${entityName}"`);
+    } catch (err) {
+      con?.error(`[livingEntities] individual search failed: ${err.message}`);
+    }
+    setIsSearching(false);
+  }, [setEvents, setGroups, setIsSearching, groups, con]);
+
+  // ── Living entities — species range (polygon) search ─────────────────────
+
+  const handleSpeciesRange = useCallback(async (qid, label, { useWikidata = true, useGBIF = false } = {}) => {
+    setIsSearching(true);
+    con?.log(`[livingEntities] range: "${label}" (${qid}) wikidata=${useWikidata} gBIF=${useGBIF}`);
+    const newPolygons = [];
+    try {
+      if (useWikidata) {
+        const geoshape = await fetchWikidataGeoshape(qid, { con });
+        if (geoshape) {
+          newPolygons.push({
+            id:      `wikidata_${qid}_${Date.now()}`,
+            label,
+            geojson: geoshape,
+            color:   '#65a30d',   // lime-600 — Wikidata geoshape fill
+            source:  'wikidata',
+          });
+          con?.success(`[livingEntities] Wikidata geoshape loaded for "${label}"`);
+        } else {
+          con?.warn(`[livingEntities] no Wikidata geoshape (P3896) for "${label}"`);
+        }
+      }
+
+      if (useGBIF) {
+         const neLayer = await fetchGBIFOccurrences(label, { con });
+        if (neLayer) {
+          newPolygons.push({
+            id:      `gbif_${Date.now()}`,
+            label,
+            geojson: neLayer,
+            color:   '#0ea5e9',   // sky-500 — GBIF occurrence range
+            source:  'gbif',
+          });
+          con?.success(`[livingEntities] Natural Earth countries layer loaded`);
+        } else {
+          con?.warn(`[livingEntities] Natural Earth layer failed to load`);
+        }
+      }
+
+      // Custom GeoJSON stub — user-supplied file upload (future feature)
+      // const userGeojson = await loadUserGeoJson();
+      // if (userGeojson) newPolygons.push({ id: `user_${Date.now()}`, label: 'User GeoJSON', geojson: userGeojson, color: '#7c3aed', source: 'user' });
+
+      if (newPolygons.length > 0) {
+        setPolygons(prev => [...prev, ...newPolygons]);
+      } else {
+        con?.warn(`[livingEntities] no polygon data found for "${label}" — check sources`);
+      }
+    } catch (err) {
+      con?.error(`[livingEntities] species range failed: ${err.message}`);
+    }
+    setIsSearching(false);
+  }, [setPolygons, setIsSearching, con]);
+
+  // ── Living entities — profile viewer ─────────────────────────────────────
+
+  const handleLivingEntityProfile = useCallback(async (qid, label) => {
+    const [profileResult, wikipediaUrl] = await Promise.all([
+      fetchEntityProfile(qid, LIVING_ENTITY_PROFILE_PROPS, { con }),
+      resolveWikipediaUrl(qid, { con }),
+    ]);
+    setProfileData({ qid, label, entityType: 'livingEntity', properties: profileResult.properties, wikipediaUrl });
+  }, [setProfileData, con]);
+
+  //---handle remove polygon--------------------------------------
+  const handleRemovePolygon = useCallback((polygonId) => {
+    setPolygons(prev => prev.filter(p => p.id !== polygonId));
+    con?.log(`[livingEntities] removed polygon overlay: ${polygonId}`);
+  }, [setPolygons, con]);
+
   // ── Return all handlers ───────────────────────────────────────────────────
   return {
     handleToggleVisible,
@@ -564,8 +780,15 @@ const handlePinNote = useCallback((noteId, pinId) => {
     handleSparqlSearch,
     handleCustomQuery,
     handleEventSearch,
+    handleOrgSearch,
+    handleOrgProfile,
+    handlePersonProfile,
     handleSaveNote,
     handleImportNotes,
     handlePinNote,
+    handleLivingEntitySearch,
+    handleSpeciesRange,
+    handleLivingEntityProfile,
+    handleRemovePolygon,
   };
 }

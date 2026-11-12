@@ -2,10 +2,9 @@ import React, { useState } from "react";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
-import { Search, Loader2, Grab, ChevronDown, ChevronUp, ExternalLink, X } from "lucide-react";
+import { Search, Loader2, Grab, ChevronDown, ChevronUp, X } from "lucide-react";
 import { motion } from "framer-motion";
 import { resolveTextToEntities } from "@/lib/wikidataUtils";
-import DisambiguationList from "@/components/ui/DisambiguationList";
 
 // ── Property definitions ─────────────────────────────────────────────────────
 const PROPERTY_CATEGORIES = [
@@ -245,12 +244,7 @@ const PROPERTY_CATEGORIES = [
   },
 ];
 
-// ── Panel states ─────────────────────────────────────────────────────────────
-const STATE = {
-  IDLE:            'idle',
-  DISAMBIGUATING:  'disambiguating',
-  SEARCHING:       'searching',
-};
+const STATE = { IDLE: 'idle', DISAMBIGUATING: 'disambiguating', SEARCHING: 'searching' };
 
 // ── Category selector pill ───────────────────────────────────────────────────
 function CategoryPill({ cat, selected, onToggle }) {
@@ -283,19 +277,17 @@ function CategoryRow({ cat, selectedPid, onPidChange }) {
   );
 }
 
-
-
 // ── Main component ───────────────────────────────────────────────────────────
 export default function CustomQueryPanel({ onSearch, isSearching, onClose }) {
-  const [searchText, setSearchText]       = useState("");
+  const [searchText, setSearchText]             = useState("");
   const [activeCategories, setActiveCategories] = useState(["generic"]);
-  const [selectedPids, setSelectedPids]   = useState(() =>
+  const [selectedPids, setSelectedPids]         = useState(() =>
     Object.fromEntries(PROPERTY_CATEGORIES.map(c => [c.id, c.properties[0].pid]))
   );
-  const [showSparql, setShowSparql]       = useState(false);
-  const [panelState, setPanelState]       = useState(STATE.IDLE);
-  const [candidates, setCandidates]       = useState([]);
-  const [resolvedQid, setResolvedQid]     = useState(null);
+  const [showSparql, setShowSparql]   = useState(false);
+  const [panelState, setPanelState]   = useState(STATE.IDLE);
+  const [candidates, setCandidates]   = useState([]);
+  const [resolvedQid, setResolvedQid] = useState(null);
 
   const toggleCategory = id =>
     setActiveCategories(prev =>
@@ -307,7 +299,6 @@ export default function CustomQueryPanel({ onSearch, isSearching, onClose }) {
 
   const activeCats = PROPERTY_CATEGORIES.filter(c => activeCategories.includes(c.id));
 
-  // Build SPARQL preview string
   const buildSparqlPreview = (qid) => {
     const vars    = activeCats.map(c => `?${c.id}`).join(" ");
     const triples = activeCats.map(c =>
@@ -316,24 +307,19 @@ export default function CustomQueryPanel({ onSearch, isSearching, onClose }) {
     return `SELECT ${vars}\nWHERE {\n${triples}\n}\nLIMIT 10`;
   };
 
-  // Step 1 — resolve text to candidates
   const handleSearch = async (e) => {
     e.preventDefault();
     if (!searchText.trim() || activeCategories.length === 0) return;
     setPanelState(STATE.DISAMBIGUATING);
     setCandidates([]);
     setResolvedQid(null);
-
     const found = await resolveTextToEntities(searchText, { limit: 5 });
     setCandidates(found);
-
-    // If only one result, skip disambiguation and go straight to query
     if (found.length === 1) {
       await handleCandidateSelect(found[0]);
     }
   };
 
-  // Step 2 — user picks a candidate, run the query
   const handleCandidateSelect = async (candidate) => {
     setResolvedQid(candidate.qid);
     setPanelState(STATE.SEARCHING);
@@ -349,26 +335,35 @@ export default function CustomQueryPanel({ onSearch, isSearching, onClose }) {
 
   return (
     <motion.div initial={{ opacity: 0, y: -20 }} animate={{ opacity: 1, y: 0 }}>
-      <Card className="w-96 elegant-shadow bg-white/95 backdrop-blur-sm border-0 dark:border-gray-700">
+      <Card className="w-80 elegant-shadow bg-white/95 backdrop-blur-sm border-0 dark:border-gray-700">
+
         <CardHeader className="pb-3 drag-handle">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
               <Search className="w-5 h-5 text-violet-600" />
               <h3 className="font-bold text-lg text-gray-900 dark:text-gray-100">Custom Query</h3>
             </div>
-                        <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2">
               <Grab className="w-4 h-4 text-gray-400" />
-              {onClose && <button onClick={onClose} className="text-gray-400 hover:text-gray-600"><X className="w-4 h-4" /></button>}
+              {onClose && (
+                <button onClick={onClose} className="text-gray-400 hover:text-gray-600">
+                  <X className="w-4 h-4" />
+                </button>
+              )}
             </div>
           </div>
-          <p className="text-xs text-gray-400 mt-1">
-            Search Wikidata for any entity and select which properties to map.
-          </p>
         </CardHeader>
 
-        <CardContent className="space-y-4">
+        <CardContent className="space-y-3">
 
-          {/* ── Search form — always visible ── */}
+          {/* Info box */}
+          <div className="bg-blue-50 dark:bg-blue-900/30 rounded-lg p-3">
+            <p className="text-xs text-blue-700 dark:text-blue-300">
+              Search Wikidata for any entity and select which properties to map.
+            </p>
+          </div>
+
+          {/* Search form */}
           <form onSubmit={handleSearch} className="space-y-3">
             <div className="relative">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 w-4 h-4" />
@@ -380,9 +375,11 @@ export default function CustomQueryPanel({ onSearch, isSearching, onClose }) {
               />
             </div>
 
-            {/* Category pills */}
+            {/* Category section */}
             <div>
-              <p className="text-xs font-medium text-gray-600 mb-2">Property categories:</p>
+              <p className="text-[10px] font-semibold uppercase tracking-widest text-gray-400 mb-2">
+                Property Categories
+              </p>
               <div className="flex flex-wrap gap-1.5">
                 {PROPERTY_CATEGORIES.map(cat => (
                   <CategoryPill key={cat.id} cat={cat}
@@ -395,7 +392,9 @@ export default function CustomQueryPanel({ onSearch, isSearching, onClose }) {
             {/* Property selectors */}
             {activeCats.length > 0 && (
               <div className="space-y-2">
-                <p className="text-xs font-medium text-gray-600">Select property per category:</p>
+                <p className="text-[10px] font-semibold uppercase tracking-widest text-gray-400">
+                  Property Per Category
+                </p>
                 {activeCats.map(cat => (
                   <CategoryRow key={cat.id} cat={cat}
                     selectedPid={selectedPids[cat.id]}
@@ -406,7 +405,7 @@ export default function CustomQueryPanel({ onSearch, isSearching, onClose }) {
 
             <Button type="submit"
               disabled={panelState === STATE.SEARCHING || !searchText.trim() || activeCategories.length === 0}
-              className="w-full bg-violet-600 hover:bg-violet-700 text-white font-medium"
+              className="w-full items-center justify-center gap-1.5 bg-lime-600 hover:bg-lime-700 disabled:opacity-50 text-white text-xs font-medium px-3 py-2 rounded-lg transition-colors"
             >
               {panelState === STATE.SEARCHING ? (
                 <><Loader2 className="w-4 h-4 mr-2 animate-spin" />Querying Wikidata…</>
@@ -418,31 +417,35 @@ export default function CustomQueryPanel({ onSearch, isSearching, onClose }) {
             </Button>
           </form>
 
-          {/* ── Disambiguation panel — expands inline ── */}
-          {panelState === STATE.DISAMBIGUATING && candidates.length > 0 && (
-            <div className="space-y-2">
-              <div className="flex items-center justify-between">
-                <p className="text-xs font-semibold text-gray-700">
-                  {candidates.length} result{candidates.length !== 1 ? 's' : ''} — which did you mean?
-                </p>
-                <button type="button" onClick={handleCancel}
-                  className="text-xs text-gray-400 hover:text-gray-600">
-                  cancel
-                </button>
-              </div>
-              <div className="space-y-1.5">
+          {/* Disambiguation list */}
+          {panelState === STATE.DISAMBIGUATING && candidates.length > 1 && (
+            <div className="space-y-1.5">
+              <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">
+                {candidates.length} results — which did you mean?
+              </p>
+              <div className="max-h-48 overflow-y-auto space-y-1 pr-1">
                 {candidates.map(c => (
-                  <DisambiguationList
-  candidates={candidates}
-  onSelect={handleCandidateSelect}
-  onCancel={handleCancel}
-/>
+                  <button
+                    key={c.qid}
+                    onClick={() => handleCandidateSelect(c)}
+                    className="w-full text-left flex items-center p-2 bg-gray-50 dark:bg-gray-800 rounded-lg hover:bg-violet-50 transition-colors"
+                  >
+                    <div className="flex-1 min-w-0">
+                      <p className="text-xs font-medium text-gray-900 truncate">{c.label}</p>
+                      {c.description && (
+                        <p className="text-[10px] text-gray-400 truncate">{c.description}</p>
+                      )}
+                    </div>
+                  </button>
                 ))}
               </div>
+              <Button variant="ghost" size="sm" onClick={handleCancel} className="w-full text-gray-500">
+                ← Back
+              </Button>
             </div>
           )}
 
-          {/* ── No results message ── */}
+          {/* No results */}
           {panelState === STATE.DISAMBIGUATING && candidates.length === 0 && (
             <div className="text-center py-4 text-sm text-gray-400">
               No results found for "{searchText}"
@@ -453,8 +456,8 @@ export default function CustomQueryPanel({ onSearch, isSearching, onClose }) {
             </div>
           )}
 
-          {/* ── SPARQL preview ── */}
-          <div className="border-t pt-2">
+          {/* SPARQL preview */}
+          <div className="border-t border-gray-100 pt-2">
             <button type="button" onClick={() => setShowSparql(v => !v)}
               className="flex items-center gap-1 text-xs text-gray-400 hover:text-gray-600">
               {showSparql ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
