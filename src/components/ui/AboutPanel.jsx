@@ -41,7 +41,7 @@ export default function AboutPanel({onClose}) {
             </div>
 
 <div>
-<a href="https://www.patreon.com/cw/timespast" target="_blank"><img src="public/tplogo.png" style={{ width: '50%', height: 'auto' }}/></a>
+<a href="https://www.patreon.com/cw/timespast" target="_blank"><img src="tplogo.png" style={{ width: '50%', height: 'auto' }}/></a>
 </div>
 
         </CardContent>
