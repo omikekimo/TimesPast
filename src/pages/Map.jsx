@@ -39,6 +39,8 @@ import { DEFAULT_TILE_ID, getTileProvider } from "../lib/mapConfig";
 import EditPinModal from "../components/map/EditPinModal";
 import NoteConstructor from "../components/ui/NoteConstructor";
 
+import ArtificialAgentsSearch from '../components/layers/ArtificialAgentsSearch';
+
 //import { useConsole }         from '@/components/console/ConsoleContext';
 import { useCommandRunner }   from '@/hooks/useCommandRunner';
 import { connectCommandSocket } from '@/lib/wsClient';
@@ -102,6 +104,7 @@ function MapPageInner() {
   const [lockedEventIds, setLockedEventIds] = useState(new Set());
   const [hoveredEventId, setHoveredEventId] = useState(null);
   const [pickingLocation, setPickingLocation] = useState({ active: false, lat: null, lng: null });
+  const [pendingLocationPin, setPendingLocationPin] = useState(null);
   const [groups, setGroups] = useState([]);
   const [queryResults, setQueryResults] = useState(null);
   const [profileData, setProfileData]   = useState(null);
@@ -133,13 +136,31 @@ function MapPageInner() {
   setHiddenEventIds, setLockedEventIds,
   setSelectedEvent, setActiveLayers,
   setTimeRange,
-  setSearchQuery, setPickingLocation,
+  setSearchQuery, setPickingLocation, setPendingLocationPin,
   setIsSearching, setLayoutMode,
   setQueryResults,
   setProfileData,
   setPolygons,
   con,
 });
+
+      // ── Pending location pin: placed once the user clicks the map ────────────
+  useEffect(() => {
+    if (!pendingLocationPin) return;
+    if (pickingLocation.active || pickingLocation.lat == null) return;
+    const { pins, groupId, groupColor, agentName } = pendingLocationPin;
+    const locatedPins = pins.map(p => ({
+      ...p,
+      latitude:  pickingLocation.lat,
+      longitude: pickingLocation.lng,
+    }));
+    setEvents(prev => [...prev, ...locatedPins]);
+    setGroups(prev => prev.find(g => g.id === groupId)
+      ? prev
+      : [...prev, { id: groupId, name: agentName, color: groupColor }]);
+    setPendingLocationPin(null);
+  }, [pickingLocation, pendingLocationPin, setEvents, setGroups]);
+
 
       // ── appState snapshot (used by command runner) ────────────────────────────
   const appState = useMemo(() => ({
@@ -328,6 +349,21 @@ function MapPageInner() {
       isSearching={isSearching}
       onClose={() => setOpenPanels(prev => prev.filter(id => id !== 'livingEntities'))}
 
+    />
+  </DraggablePanel>
+)}
+
+
+        {openPanels.includes('artificialAgents') && activeLayers.includes('artificialAgents') && (
+  <DraggablePanel initialPosition={{ x: 24, y: 350 }} dragHandleClassName="drag-handle">
+    <ArtificialAgentsSearch
+      onSearch={handlers.handleArtificialAgentSearch}
+      onConceptSearch={handlers.handleArtificialAgentSearch}
+      onProfile={handlers.handleArtificialAgentProfile}
+
+      onStatements={handlers.handleArtificialAgentStatements}
+      isSearching={isSearching}
+      onClose={() => setOpenPanels(prev => prev.filter(id => id !== 'artificialAgents'))}
     />
   </DraggablePanel>
 )}
@@ -657,7 +693,11 @@ function MapPageInner() {
 
         {pickingLocation.active && (
           <div className="absolute top-4 left-1/2 -translate-x-1/2 z-[2000] bg-blue-600 text-white text-sm font-medium px-4 py-2 rounded-full shadow-lg flex items-center gap-2 pointer-events-none">
-            <span>🎯 Click anywhere on the map to set the pin location</span>
+                        <span>
+              {pendingLocationPin
+                ? `🎯 Click the map to place "${pendingLocationPin.agentName}" on the timeline`
+                : '🎯 Click anywhere on the map to set the pin location'}
+            </span>
           </div>
         )}
 

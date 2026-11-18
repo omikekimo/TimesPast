@@ -122,9 +122,16 @@ export function parseCoordinate(pointString) {
 // call this to get the actual coordinates of that entity via P625.
 export async function resolveEntityCoordinates(qid, { con } = {}) {
   con?.log(`[wikidata] resolving coordinates for ${qid}…`);
+  // Try P625 directly first; if the entity has none, walk up to its
+  // administrative territory (P131) or country (P17) — both of which
+  // reliably carry P625.  One UNION query so it is still a single request.
   const sparql = `
     SELECT ?coords WHERE {
-      OPTIONAL { wd:${qid} wdt:P625 ?coords . }
+      { wd:${qid} wdt:P625 ?coords . }
+      UNION
+      { wd:${qid} wdt:P131 ?territory . ?territory wdt:P625 ?coords . }
+      UNION
+      { wd:${qid} wdt:P17  ?country   . ?country   wdt:P625 ?coords . }
     } LIMIT 1`;
   try {
     const rows = await runSparql(sparql, { con });
@@ -138,6 +145,223 @@ export async function resolveEntityCoordinates(qid, { con } = {}) {
   } catch (err) {
     con?.error(`[wikidata] resolveEntityCoordinates failed: ${err.message}`);
     return null;
+  }
+}
+
+// ── Properties that point to abstract type-nodes; never useful for location ──
+const SKIP_FOR_LOCATION_RECURSION = new Set([
+  'P31',  // instance of
+  'P279', // subclass of
+  'P18',  // image
+  'P154', // logo image
+  'P910', // topic's main category
+  'P373', // Commons category
+  'P935', // Commons gallery
+  'P856', // official website
+  'P625', // coordinate location (handled inline already)
+  'P571', // inception (date, not Q-item)
+  'P576', // dissolved (date)
+  'P7',   // brother
+  'P9',   // sister
+  'P22',  // father
+  'P25',  // mother
+  'P26',  // spouse
+  'P40',  // child
+]);
+
+// ── Fetch all Q-item-valued statements on an entity (for graph walking) ───────
+export async function fetchEntityStatements(qid, { con } = {}) {
+  con?.log(`[wikidata] fetchEntityStatements: querying Q-valued statements for ${qid}`);
+  // Variables must follow ?X / ?XLabel pattern for the label service to auto-fill labels.
+  // ?prop → ?propLabel   (the property entity, e.g. wd:P495)
+  // ?value → ?valueLabel (the value entity, e.g. wd:Q30)
+  const sparql = `
+    SELECT DISTINCT ?prop ?propLabel ?value ?valueLabel WHERE {
+      wd:${qid} ?claim ?value .
+      ?prop wikibase:directClaim ?claim .
+      FILTER(ISIRI(?value) && STRSTARTS(STR(?value), "http://www.wikidata.org/entity/Q"))
+      SERVICE wikibase:label { bd:serviceParam wikibase:language "[AUTO_LANGUAGE],en" }
+    } LIMIT 50`;
+  try {
+    const rows = await runSparql(sparql, { con });
+    con?.log(`[wikidata] fetchEntityStatements: ${rows.length} raw row(s) for ${qid}`);
+    return rows
+      .map(r => ({
+        propId:     r.prop?.value.split('/').pop() || '',
+        propLabel:  r.propLabel?.value || '',
+        valueQid:   r.value?.value.split('/').pop() || '',
+        valueLabel: r.valueLabel?.value || r.value?.value || '',
+      }))
+      .filter(s => s.propId && s.valueQid && !SKIP_FOR_LOCATION_RECURSION.has(s.propId));
+  } catch (err) {
+    con?.warn(`[wikidata] fetchEntityStatements failed for ${qid}: ${err.message}`);
+    return [];
+  }
+}
+
+// ── Resolve coordinates for many QIDs in one SPARQL (uses same UNION cascade) ─
+export async function batchResolveCoordinates(qids, { con } = {}) {
+  if (!qids.length) return new Map();
+  const valuesClause = qids.map(q => `wd:${q}`).join(' ');
+  const sparql = `
+    SELECT DISTINCT ?entity ?coords WHERE {
+      VALUES ?entity { ${valuesClause} }
+      {
+        { ?entity wdt:P625 ?coords . }
+        UNION
+        { ?entity wdt:P131 ?place   . ?place   wdt:P625 ?coords . }
+        UNION
+        { ?entity wdt:P17  ?country . ?country wdt:P625 ?coords . }
+      }
+    } LIMIT ${qids.length * 3}`;
+  try {
+    const rows   = await runSparql(sparql, { con });
+    const result = new Map();
+    for (const row of rows) {
+      if (!row.entity?.value || !row.coords?.value) continue;
+      const qid = row.entity.value.split('/').pop();
+      if (!result.has(qid)) {
+        const coords = parseCoordinate(row.coords.value);
+        if (coords) result.set(qid, coords);
+      }
+    }
+    return result;
+  } catch (err) {
+    con?.warn(`[wikidata] batchResolveCoordinates failed: ${err.message}`);
+    return new Map();
+  }
+}
+
+// ── BFS graph walk — builds pins from related entities up to maxDepth ─────────
+// Each BFS level: parallel fetchEntityStatements + one batchResolveCoordinates.
+export async function resolveDeepLocationPins(
+  rootQid, agentName, baseYear, groupId, groupColor, wikipediaUrl,
+  { con, maxDepth = 2, maxWidthPerLevel = 10 } = {}
+) {
+  const visited = new Set([rootQid]);
+  const pins    = [];
+  let currentLevel = [{ entityQid: rootQid, pathLabel: agentName }];
+
+  for (let depth = 0; depth <= maxDepth; depth++) {
+    if (!currentLevel.length) break;
+    con?.log(`[wikidata:deep] depth ${depth} — processing ${currentLevel.length} entity/entities`);
+
+    // Fetch all Q-valued statements for every entity at this level in parallel
+    const statementSets = await Promise.all(
+      currentLevel.map(({ entityQid, pathLabel }) =>
+        fetchEntityStatements(entityQid, { con }).then(stmts => ({ stmts, pathLabel }))
+      )
+    );
+
+    // Gather unique new QIDs we haven't visited yet
+    const statementPool = [];
+    for (const { stmts, pathLabel } of statementSets) {
+      for (const stmt of stmts) {
+        if (!visited.has(stmt.valueQid)) {
+          statementPool.push({ ...stmt, fromPathLabel: pathLabel });
+        }
+      }
+    }
+    if (!statementPool.length) break;
+
+    // One coordinate batch call covers the whole level
+    const uniqueQids = [...new Set(statementPool.map(s => s.valueQid))];
+    const coordsMap  = await batchResolveCoordinates(uniqueQids, { con });
+
+    const nextLevelCandidates = [];
+    for (const stmt of statementPool) {
+      if (visited.has(stmt.valueQid)) continue; // another statement in this batch already claimed it
+      const coords = coordsMap.get(stmt.valueQid);
+
+      if (coords) {
+        const pinTitle = depth === 0
+          ? `${agentName} — ${stmt.propLabel}: ${stmt.valueLabel}`
+          : `${stmt.fromPathLabel} — ${stmt.propLabel}: ${stmt.valueLabel}`;
+        pins.push({
+          title:        pinTitle,
+          description:  `${agentName} is linked to ${stmt.valueLabel} via "${stmt.propLabel}".`,
+          year:         baseYear || new Date().getFullYear(),
+          date:         null,
+          latitude:     coords.lat,
+          longitude:    coords.lng,
+          category:     'artificialAgents',
+          significance: 'national',
+          source:       'Wikidata SPARQL (deep)',
+          wikipedia_url: wikipediaUrl,
+        });
+        con?.log(`[wikidata:deep] ✓ depth ${depth}: "${stmt.propLabel}: ${stmt.valueLabel}"`);
+        visited.add(stmt.valueQid);
+      } else if (depth < maxDepth) {
+        nextLevelCandidates.push({
+          entityQid: stmt.valueQid,
+          pathLabel: `${stmt.fromPathLabel} → ${stmt.valueLabel}`,
+        });
+        visited.add(stmt.valueQid);
+      }
+    }
+
+    currentLevel = nextLevelCandidates.slice(0, maxWidthPerLevel);
+  }
+
+  con?.log(`[wikidata:deep] walk complete — ${pins.length} pin(s) found`);
+  return pins;
+}
+
+// ── Fetch ALL statements on an entity in ProfileViewer format ─────────────────
+// Covers Q-items, dates, strings and URLs — ready to pass straight to setProfileData.
+export async function fetchAllStatements(qid, { con } = {}) {
+  con?.log(`[wikidata] fetchAllStatements: querying all statements for ${qid}`);
+  // ?prop → ?propLabel, ?value → ?valueLabel via label service convention
+  const sparql = `
+    SELECT DISTINCT ?prop ?propLabel ?value ?valueLabel WHERE {
+      wd:${qid} ?claim ?value .
+      ?prop wikibase:directClaim ?claim .
+      SERVICE wikibase:label { bd:serviceParam wikibase:language "[AUTO_LANGUAGE],en" }
+    }
+    ORDER BY ?prop
+    LIMIT 100`;
+  try {
+    const rows   = await runSparql(sparql, { con });
+    con?.log(`[wikidata] fetchAllStatements: ${rows.length} raw row(s) for ${qid}`);
+    const propMap = new Map();
+
+    for (const row of rows) {
+      const propId   = row.prop?.value.split('/').pop();
+      const propLabel = row.propLabel?.value || propId || '';
+      const rawValue = row.value?.value || '';
+      if (!propId || !rawValue) continue;
+
+      let display = row.valueLabel?.value || rawValue;
+      let type    = 'string';
+
+      if (rawValue.startsWith('http://www.wikidata.org/entity/')) {
+        type = 'string';                              // Q-item: show its label
+      } else if (propId === 'P18' || propId === 'P154' || propId === 'P41') {
+        type    = 'image';
+        display = rawValue;
+      } else if ((rawValue.startsWith('http://') || rawValue.startsWith('https://')) &&
+                 !rawValue.includes('wikidata.org')) {
+        type    = 'url';
+        display = rawValue;
+      } else if (/^\d{4}-\d{2}-\d{2}T/.test(rawValue)) {
+        display = rawValue.slice(0, 10);              // YYYY-MM-DD only
+      }
+
+      if (!propMap.has(propId)) {
+        propMap.set(propId, { id: propId, label: propLabel, type, values: [] });
+      }
+      const prop = propMap.get(propId);
+      if (!prop.values.some(v => v.raw === rawValue)) {
+        prop.values.push({ display, raw: rawValue });
+      }
+    }
+
+    const result = Array.from(propMap.values());
+    con?.log(`[wikidata] fetchAllStatements: ${result.length} distinct property/properties for ${qid}`);
+    return result;
+  } catch (err) {
+    con?.warn(`[wikidata] fetchAllStatements failed for ${qid}: ${err.message}`);
+    return [];
   }
 }
 
@@ -419,13 +643,13 @@ export async function buildPeopleSearchPins(qid, searchTerm, { con } = {}) {
  * Converts already-fetched eventData into an array of pin objects.
  * groupId, groupColor, and wikipediaUrl must be resolved by the caller first.
  */
-export function buildEventPins(eventData, label, groupId, groupColor, wikipediaUrl) {
+export function buildEventPins(eventData, label, groupId, groupColor, wikipediaUrl, category = 'events') {
   const { lat, lng, locationLabel, startDate, endDate, pointInTime } = eventData;
 
   const basePin = {
     latitude:      lat  ?? 0,
     longitude:     lng  ?? 0,
-    category:      'events',
+    category,
     significance:  'global',
     source:        'Wikidata Events',
     search_group:  groupId,
@@ -792,4 +1016,194 @@ export async function buildLivingEntityPins(qid, searchTerm, { con } = {}) {
   });
 
   return { pins, entityName, wikipediaUrl };
+}
+
+// ── Artificial agent profile properties ───────────────────────────────────────
+export const ARTIFICIAL_AGENT_PROFILE_PROPS = [
+  { id: 'P18',   label: 'Image',                type: 'image'  },
+  { id: 'P571',  label: 'Created / Inception',  type: 'date'   },
+  { id: 'P576',  label: 'Dissolved / Ended',    type: 'date'   },
+  { id: 'P178',  label: 'Developer',            type: 'string' },
+  { id: 'P123',  label: 'Publisher',            type: 'string' },
+  { id: 'P277',  label: 'Programming language', type: 'string' },
+  { id: 'P856',  label: 'Website',              type: 'url'    },
+  { id: 'P495',  label: 'Country of origin',    type: 'place'  },
+  { id: 'P31',   label: 'Instance of',          type: 'string' },
+  { id: 'P366',  label: 'Main use',             type: 'string' },
+];
+
+// ── Artificial agent pin builder ──────────────────────────────────────────────
+// Fetches inception (P571) and dissolution (P576) dates.
+// Location fallback chain: P740 → P276 → P131 → P361 (part of, resolved) → P495
+export async function buildArtificialAgentPins(qid, agentName, { con } = {}) {
+  con?.log(`[wikidata] building artificial agent pins for ${qid}…`);
+
+  const sparqlQuery = `
+    SELECT ?itemLabel ?wikipediaUrl ?inceptionDate ?endDate
+           ?formationPlace ?formationPlaceLabel ?formationPlaceCoords
+           ?locationPlace  ?locationPlaceLabel  ?locationPlaceCoords
+           ?adminPlace     ?adminPlaceLabel     ?adminPlaceCoords
+           ?partOfPlace    ?partOfPlaceLabel
+           ?directCountry  ?directCountryLabel  ?directCountryCoords
+           ?countryPlace   ?countryPlaceLabel   ?countryPlaceCoords
+    WHERE {
+      OPTIONAL {
+        ?article schema:about wd:${qid};
+                 schema:isPartOf <https://en.wikipedia.org/>;
+                 schema:name ?wikiTitle.
+        BIND(IRI(CONCAT("https://en.wikipedia.org/wiki/", ENCODE_FOR_URI(?wikiTitle))) AS ?wikipediaUrl)
+      }
+      OPTIONAL { wd:${qid} wdt:P571 ?inceptionDate . }
+      OPTIONAL { wd:${qid} wdt:P576 ?endDate . }
+      OPTIONAL {
+        wd:${qid} wdt:P740 ?formationPlace .
+        OPTIONAL { ?formationPlace wdt:P625 ?formationPlaceCoords . }
+      }
+      OPTIONAL {
+        wd:${qid} wdt:P276 ?locationPlace .
+        OPTIONAL { ?locationPlace wdt:P625 ?locationPlaceCoords . }
+      }
+      OPTIONAL {
+        wd:${qid} wdt:P131 ?adminPlace .
+        OPTIONAL { ?adminPlace wdt:P625 ?adminPlaceCoords . }
+      }
+              OPTIONAL { wd:${qid} wdt:P361 ?partOfPlace . }
+        OPTIONAL {
+          wd:${qid} wdt:P17 ?directCountry .
+          OPTIONAL { ?directCountry wdt:P625 ?directCountryCoords . }
+        }
+        OPTIONAL {
+          wd:${qid} wdt:P495 ?countryPlace .
+        OPTIONAL { ?countryPlace wdt:P625 ?countryPlaceCoords . }
+      }
+      SERVICE wikibase:label { bd:serviceParam wikibase:language "[AUTO_LANGUAGE],en". }
+    } LIMIT 1`;
+
+  const endpointUrl = `https://query.wikidata.org/sparql?query=${encodeURIComponent(sparqlQuery)}&format=json`;
+  const response = await fetch(endpointUrl, { headers: { Accept: 'application/sparql-results+json' } });
+  if (!response.ok) throw new Error(`SPARQL error: ${response.statusText}`);
+  const data    = await response.json();
+  const results = data.results.bindings;
+  if (!results.length) return { pins: [], agentName, wikipediaUrl: null };
+
+  const row          = results[0];
+  const resolvedName = row.itemLabel?.value || agentName;
+  const wikipediaUrl = row.wikipediaUrl?.value
+    || `https://en.wikipedia.org/wiki/${encodeURIComponent(resolvedName)}`;
+
+  const parseCoordsString = (pointStr) => {
+    if (!pointStr) return null;
+    const parts = pointStr.replace('Point(', '').replace(')', '').split(' ');
+    const lng = parseFloat(parts[0]);
+    const lat = parseFloat(parts[1]);
+    if (isNaN(lat) || isNaN(lng)) return null;
+    return { lat, lng };
+  };
+
+  // ── Location resolution — cascade through properties in priority order ────
+  // Inline coords are tried first (fast, no extra round-trip).
+  // Entity resolution is the fallback when only a QID is returned.
+  // P361 (part of) is last before country — resolves the parent entity's coords.
+  let latitude = 0, longitude = 0, locationDescription = resolvedName;
+
+  const tryInline = (coordsValue, labelValue, description) => {
+    const c = parseCoordsString(coordsValue);
+    if (!c) return false;
+    latitude = c.lat; longitude = c.lng;
+    locationDescription = labelValue || description;
+    return true;
+  };
+
+  const tryEntityResolve = async (entityValue, labelValue, description) => {
+    if (!entityValue) return false;
+    const entityQid = entityValue.split('/').pop();
+    const resolved  = await resolveEntityCoordinates(entityQid, { con });
+    if (!resolved) return false;
+    latitude = resolved.lat; longitude = resolved.lng;
+    locationDescription = labelValue || description;
+    return true;
+  };
+
+  // 1. P740 — location of formation (inline)
+  if (!tryInline(row.formationPlaceCoords?.value, row.formationPlaceLabel?.value, 'Formation location'))
+  // 2. P276 — physical location (inline)
+  if (!tryInline(row.locationPlaceCoords?.value,  row.locationPlaceLabel?.value,  'Location'))
+  // 3. P131 — administrative territory (inline)
+  if (!tryInline(row.adminPlaceCoords?.value,     row.adminPlaceLabel?.value,     'Administrative location'))
+       // 4. P17 — direct country (inline)
+     if (!tryInline(row.directCountryCoords?.value,  row.directCountryLabel?.value,  'Country'))
+     // 5. P495 — country of origin (inline)
+     if (!tryInline(row.countryPlaceCoords?.value,   row.countryPlaceLabel?.value,   'Country of origin')) {
+       // No inline coords found — try entity resolution in the same order
+       const resolved =
+         await tryEntityResolve(row.formationPlace?.value,  row.formationPlaceLabel?.value,  'Formation location') ||
+         await tryEntityResolve(row.locationPlace?.value,   row.locationPlaceLabel?.value,   'Location')           ||
+         await tryEntityResolve(row.adminPlace?.value,      row.adminPlaceLabel?.value,      'Administrative location') ||
+         // 6. P361 — part of: resolve the parent entity's own coordinates
+         await tryEntityResolve(row.partOfPlace?.value,     row.partOfPlaceLabel?.value,     'Parent institution')  ||
+         await tryEntityResolve(row.directCountry?.value,   row.directCountryLabel?.value,   'Country')             ||
+         await tryEntityResolve(row.countryPlace?.value,    row.countryPlaceLabel?.value,    'Country of origin');
+
+    if (resolved) con?.log(`[wikidata] resolved location via entity lookup: ${locationDescription}`);
+    else con?.warn(`[wikidata] no location resolved for ${qid} — pin will have lat/lng 0`);
+  }
+
+  // ── Build pins ────────────────────────────────────────────────────────────
+  const pins = [];
+
+  if (row.inceptionDate?.value) {
+    const datePart      = parseSparqlDate(row.inceptionDate.value);
+    const inceptionYear = datePartToYear(datePart);
+    if (inceptionYear) {
+      pins.push({
+        title:        `${resolvedName} — Created`,
+        description:  `${resolvedName} created / first deployed in ${locationDescription}.`,
+        year:         inceptionYear,
+        date:         { start: datePart, end: null },
+        latitude,     longitude,
+        category:     'artificialAgents',
+        significance: 'national',
+        source:       'Wikidata SPARQL',
+        wikipedia_url: wikipediaUrl,
+      });
+    }
+  }
+
+  if (row.endDate?.value) {
+    const datePart = parseSparqlDate(row.endDate.value);
+    const endYear  = datePartToYear(datePart);
+    if (endYear) {
+      pins.push({
+        title:        `${resolvedName} — Ended`,
+        description:  `${resolvedName} decommissioned / dissolved.`,
+        year:         endYear,
+        date:         { start: datePart, end: null },
+        latitude,     longitude,
+        category:     'artificialAgents',
+        significance: 'national',
+        source:       'Wikidata SPARQL',
+        wikipedia_url: wikipediaUrl,
+      });
+    }
+  }
+
+  // If no dated pins but we have a location, make an undated presence pin
+  if (pins.length === 0 && (latitude !== 0 || longitude !== 0)) {
+    pins.push({
+      title:        resolvedName,
+      description:  `${resolvedName} — ${locationDescription}.`,
+      year:         new Date().getFullYear(),
+      date:         null,
+      latitude,     longitude,
+      category:     'artificialAgents',
+      significance: 'national',
+      source:       'Wikidata SPARQL',
+      wikipedia_url: wikipediaUrl,
+    });
+  }
+
+   const inceptionYear = row.inceptionDate?.value
+     ? datePartToYear(parseSparqlDate(row.inceptionDate.value))
+     : null;
+   return { pins, agentName: resolvedName, wikipediaUrl, locationResolved: (latitude !== 0 || longitude !== 0), inceptionYear };
 }

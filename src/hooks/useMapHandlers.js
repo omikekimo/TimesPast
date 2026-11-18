@@ -22,12 +22,19 @@ import {
   PERSON_PROFILE_PROPS,
   buildLivingEntityPins,
   LIVING_ENTITY_PROFILE_PROPS,
+  buildArtificialAgentPins,
+  ARTIFICIAL_AGENT_PROFILE_PROPS,
+  resolveDeepLocationPins,
+  fetchEntityStatements,
+  batchResolveCoordinates,
+  fetchAllStatements
 } from '@/lib/wikidataUtils';
 import { fetchWikidataGeoshape, fetchGBIFOccurrences } from '@/lib/geoUtils';
 import { CATEGORY_DEFS } from '@/lib/mapUtils';
 import { csvRowsToEvents } from '@/lib/csvUtils';
 import { buildSessionSnapshot, saveSessionBlob, loadSessionBlob } from '@/lib/sessionUtils';
 import { downloadJson, readJsonFile }                              from '@/lib/fileUtils';
+import { resolveWebsiteDomain, fetchRdapForDomain } from '@/lib/rdapUtils';
 
 // Checks if a timeline group with this name already exists.
 // If it does, asks the user if they want to reuse it.
@@ -70,6 +77,7 @@ export function useMapHandlers({
   setTimeRange,
   setSearchQuery,
   setPickingLocation,
+  setPendingLocationPin,
   setIsSearching,
   setLayoutMode,
   setQueryResults,
@@ -757,6 +765,152 @@ const handlePinNote = useCallback((noteId, pinId) => {
     con?.log(`[livingEntities] removed polygon overlay: ${polygonId}`);
   }, [setPolygons, con]);
 
+    // ── Artificial agents — entity search ────────────────────────────────────
+
+    const handleArtificialAgentSearch = useCallback(async (qid, label, { depth = 2 } = {}) => {
+    if (!qid) return;
+    setIsSearching(true);
+    con?.log(`[artificialAgents] entity: "${label}" (${qid}) depth:${depth}`);
+    try {
+      const { pins, agentName, wikipediaUrl, locationResolved, inceptionYear } =
+        await buildArtificialAgentPins(qid, label, { con });
+
+      const { groupId, groupColor } = resolveGroupForSearch(label, groups);
+
+      if (locationResolved && pins.length) {
+        // Direct location found — place pins normally
+              const withIds = pins.map((p, i) => ({
+        ...p, id: `ap_${qid}_${Date.now()}_${i}`,
+          search_group: groupId, search_color: groupColor, search_query: label,
+        }));
+        setEvents(prev => [...prev, ...withIds]);
+        setGroups(prev => prev.find(g => g.id === groupId) ? prev : [...prev, { id: groupId, name: label, color: groupColor }]);
+        con?.success(`[artificialAgents] added ${withIds.length} direct pin(s) for "${agentName}"`);
+        setIsSearching(false);
+        return;
+      }
+
+      // No direct location — walk the Wikidata graph up to the requested depth
+      con?.log(`[artificialAgents] no direct location for "${agentName}" — starting graph walk (depth ${depth})`);
+      const baseYear = inceptionYear || new Date().getFullYear();
+      const deepPins = await resolveDeepLocationPins(
+        qid, agentName, baseYear, groupId, groupColor, wikipediaUrl,
+        { con, maxDepth: depth }
+      );
+
+      if (deepPins.length) {
+              const withIds = deepPins.map((p, i) => ({
+        ...p, id: `ap_${qid}_deep_${Date.now()}_${i}`,
+          search_group: groupId, search_color: groupColor, search_query: label,
+        }));
+        setEvents(prev => [...prev, ...withIds]);
+        setGroups(prev => prev.find(g => g.id === groupId) ? prev : [...prev, { id: groupId, name: label, color: groupColor }]);
+        con?.success(`[artificialAgents] placed ${deepPins.length} graph-walk pin(s) for "${agentName}"`);
+        setIsSearching(false);
+        return;
+      }
+
+      // Graph walk also found nothing — prompt user to pick a spot
+      con?.warn(`[artificialAgents] graph walk exhausted for "${agentName}" — prompting user to pick location`);
+      const basePin = {
+        title: agentName, description: `${agentName} — location unknown.`,
+        year: baseYear, date: null, latitude: 0, longitude: 0,
+        category: 'artificialAgents', significance: 'national',
+        source: 'Wikidata SPARQL', wikipedia_url: wikipediaUrl,
+      };
+      const templatePins = [basePin].map((p, i) => ({
+        ...p, id: `agent_${groupId}_${i}`,
+        search_group: groupId, search_color: groupColor, search_query: label,
+      }));
+      setPendingLocationPin({ pins: templatePins, groupId, groupColor, agentName });
+      setPickingLocation({ active: true, lat: null, lng: null });
+
+    } catch (err) {
+      con?.error(`[artificialAgents] entity search failed: ${err.message}`);
+    }
+    setIsSearching(false);
+  }, [setEvents, setGroups, setIsSearching, setPickingLocation, setPendingLocationPin, groups, con]);
+
+  // ── Artificial agents — breakthrough / technological first search ─────────
+
+  const handleArtificialAgentConceptSearch = useCallback(async (qid, label) => {
+    if (!qid) return;
+    setIsSearching(true);
+    con?.log(`[artificialAgents] breakthrough: "${label}" (${qid})`);
+    try {
+      const [eventData, wikipediaUrl] = await Promise.all([
+        fetchEventData(qid, { con }),
+        resolveWikipediaUrl(qid, { con }),
+      ]);
+      if (!eventData) {
+        con?.warn(`[artificialAgents] no event data for breakthrough "${label}"`);
+        setIsSearching(false);
+        return;
+      }
+      const { groupId, groupColor } = resolveGroupForSearch(label, groups);
+      const rawPins = buildEventPins(eventData, label, groupId, groupColor, wikipediaUrl, 'artificialAgents');
+      if (!rawPins.length) {
+        con?.warn(`[artificialAgents] no pins built for breakthrough "${label}"`);
+        setIsSearching(false);
+        return;
+      }
+      const withIds = rawPins.map((p, i) => ({
+        ...p,
+        id: `agent_concept_${groupId}_${i}`,
+      }));
+      setEvents(prev => [...prev, ...withIds]);
+      setGroups(prev =>
+        prev.find(g => g.id === groupId)
+          ? prev
+          : [...prev, { id: groupId, name: label, color: groupColor }]
+      );
+      con?.success(`[artificialAgents] added ${withIds.length} breakthrough pin(s) for "${label}"`);
+    } catch (err) {
+      con?.error(`[artificialAgents] breakthrough search failed: ${err.message}`);
+    }
+    setIsSearching(false);
+  }, [setEvents, setGroups, setIsSearching, groups, con]);
+
+  // ── Artificial agents — profile viewer ───────────────────────────────────
+
+    const handleArtificialAgentProfile = useCallback(async (qid, label, { useWikidata = true, useRdap = false } = {}) => {
+    const [profileResult, wikipediaUrl] = await Promise.all([
+      useWikidata ? fetchEntityProfile(qid, ARTIFICIAL_AGENT_PROFILE_PROPS, { con }) : Promise.resolve({ properties: [] }),
+      resolveWikipediaUrl(qid, { con }),
+    ]);
+
+    let allProperties = profileResult.properties || [];
+
+    if (useRdap) {
+      const domain = await resolveWebsiteDomain(qid, { con });
+      if (domain) {
+        const rdapRows = await fetchRdapForDomain(domain, { con });
+        allProperties = [...allProperties, ...rdapRows];
+      }
+    }
+
+    setProfileData({ qid, label, entityType: 'artificialAgent', properties: allProperties, wikipediaUrl });
+  }, [setProfileData, con]);
+
+  //--artificial agent statements------------------------
+      const handleArtificialAgentStatements = useCallback(async (qid, label) => {
+    con?.log(`[artificialAgents] fetching all statements for "${label}" (${qid})`);
+    const [properties, wikipediaUrl] = await Promise.all([
+      fetchAllStatements(qid, { con }),
+      resolveWikipediaUrl(qid, { con }),
+    ]);
+    if (!properties.length) {
+      con?.warn(`[artificialAgents] no statements returned for "${label}"`);
+      return;
+    }
+    setProfileData({
+      qid, label,
+      entityType: 'All Wikidata Statements',
+      properties,
+      wikipediaUrl,
+    });
+  }, [setProfileData, con]);
+
   // ── Return all handlers ───────────────────────────────────────────────────
   return {
     handleToggleVisible,
@@ -790,5 +944,9 @@ const handlePinNote = useCallback((noteId, pinId) => {
     handleSpeciesRange,
     handleLivingEntityProfile,
     handleRemovePolygon,
+    handleArtificialAgentSearch,
+    handleArtificialAgentConceptSearch,
+    handleArtificialAgentProfile,
+    handleArtificialAgentStatements,
   };
 }

@@ -15,7 +15,7 @@ const sections = [
       { id: 'people',           label: 'People',            icon: Users,    color: 'bg-amber-100 text-amber-800',   hasSearch: true  },
       { id: 'organisations',    label: 'Organisations',     icon: Building2,color: 'bg-orange-100 text-orange-800', hasSearch: true },
       { id: 'livingEntities',   label: 'Living Entities',   icon: Leaf,     color: 'bg-lime-100 text-lime-800',     hasSearch: true },
-      { id: 'artificialAgents', label: 'Artificial Agents', icon: Bot,      color: 'bg-sky-100 text-sky-800',       hasSearch: false },
+      { id: 'artificialAgents', label: 'Artificial Agents', icon: Bot,      color: 'bg-sky-100 text-sky-800',       hasSearch: true },
     ],
   },
   {
