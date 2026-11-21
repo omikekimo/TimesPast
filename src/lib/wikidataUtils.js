@@ -637,6 +637,94 @@ export async function buildPeopleSearchPins(qid, searchTerm, { con } = {}) {
   return { pins, personName, wikipediaUrl };
 }
 
+// ── People life-event pin enricher ───────────────────────────────────────────
+/**
+ * Fetches positions, employers, education, residences and work locations
+ * for a person with qualifier start/end dates where Wikidata has them.
+ * Returns raw pins in the same shape as buildPeopleSearchPins — no id/group fields.
+ */
+export async function fetchPersonEventPins(qid, personName, birthYear, wikipediaUrl, { con } = {}) {
+  con?.log(`[wikidata] fetching life-event pins for ${qid} (${personName})…`);
+
+  const sparql = `SELECT ?propLabel ?entity ?entityLabel ?coords ?startDate ?endDate WHERE {`
+    + ` { wd:${qid} p:P39  ?stmt . ?stmt ps:P39  ?entity . ?entity wdt:P625 ?coords .`
+    + `   OPTIONAL { ?stmt pq:P580 ?startDate } OPTIONAL { ?stmt pq:P582 ?endDate }`
+    + `   BIND("position held" AS ?propLabel) }`
+    + ` UNION { wd:${qid} p:P108 ?stmt . ?stmt ps:P108 ?entity . ?entity wdt:P625 ?coords .`
+    + `   OPTIONAL { ?stmt pq:P580 ?startDate } OPTIONAL { ?stmt pq:P582 ?endDate }`
+    + `   BIND("employer" AS ?propLabel) }`
+    + ` UNION { wd:${qid} p:P69  ?stmt . ?stmt ps:P69  ?entity . ?entity wdt:P625 ?coords .`
+    + `   OPTIONAL { ?stmt pq:P580 ?startDate } OPTIONAL { ?stmt pq:P582 ?endDate }`
+    + `   BIND("educated at" AS ?propLabel) }`
+    + ` UNION { wd:${qid} p:P551 ?stmt . ?stmt ps:P551 ?entity . ?entity wdt:P625 ?coords .`
+    + `   OPTIONAL { ?stmt pq:P580 ?startDate } OPTIONAL { ?stmt pq:P582 ?endDate }`
+    + `   BIND("residence" AS ?propLabel) }`
+    + ` UNION { wd:${qid} p:P937 ?stmt . ?stmt ps:P937 ?entity . ?entity wdt:P625 ?coords .`
+    + `   OPTIONAL { ?stmt pq:P580 ?startDate } OPTIONAL { ?stmt pq:P582 ?endDate }`
+    + `   BIND("work location" AS ?propLabel) }`
+    + ` SERVICE wikibase:label { bd:serviceParam wikibase:language "[AUTO_LANGUAGE],en" }`
+    + ` } LIMIT 30`;
+
+  const parseYear = (isoString) => {
+    if (!isoString) return null;
+    const match = isoString.match(/^(-?\d+)/);
+    return match ? parseInt(match[1], 10) : null;
+  };
+
+  try {
+    const endpointUrl = `https://query.wikidata.org/sparql?query=${encodeURIComponent(sparql)}&format=json`;
+    con?.log(`[wikidata] fetchPersonEventPins URL length: ${endpointUrl.length}`);
+    const response = await fetch(endpointUrl, { headers: { Accept: 'application/sparql-results+json' } });
+    if (!response.ok) throw new Error(`SPARQL ${response.status}: ${response.statusText}`);
+    const data = await response.json();
+    const rows = data.results?.bindings || [];
+    con?.log(`[wikidata] fetchPersonEventPins: ${rows.length} row(s) for ${personName}`);
+
+    const pins = [];
+    for (const row of rows) {
+      const propLabel   = row.propLabel?.value   || '';
+      const entityLabel = row.entityLabel?.value || row.entity?.value || '';
+      const rawCoords   = row.coords?.value      || '';
+      if (!rawCoords) continue;
+
+      const coordParts = rawCoords.replace('Point(', '').replace(')', '').split(' ');
+      const longitude  = parseFloat(coordParts[0]);
+      const latitude   = parseFloat(coordParts[1]);
+      if (isNaN(latitude) || isNaN(longitude)) continue;
+
+      const rawStart  = row.startDate?.value || null;
+      const rawEnd    = row.endDate?.value   || null;
+      const startYear = parseYear(rawStart);
+      const endYear   = parseYear(rawEnd);
+      const year      = startYear || endYear || birthYear;
+      if (!year) continue;
+
+      const dateRange = startYear && endYear ? ` (${startYear}–${endYear})`
+                      : startYear            ? ` (from ${startYear})`
+                      : endYear              ? ` (until ${endYear})`
+                      : '';
+
+      pins.push({
+        title:        `${personName} — ${propLabel}${dateRange}: ${entityLabel}`,
+        description:  `${propLabel}${dateRange}: ${entityLabel}.`,
+        year,
+        date:         { start: rawStart, end: rawEnd },
+        latitude,
+        longitude,
+        category:     'people',
+        significance: 'national',
+        source:       'Wikidata SPARQL',
+        wikipedia_url: wikipediaUrl || null,
+      });
+    }
+    con?.log(`[wikidata] fetchPersonEventPins: ${pins.length} mappable pin(s) for ${personName}`);
+    return pins;
+  } catch (err) {
+    con?.warn(`[wikidata] fetchPersonEventPins failed for ${qid}: ${err.message}`);
+    return [];
+  }
+}
+
 // ── Event pin builder ─────────────────────────────────────────────────────
 
 /**
@@ -1206,4 +1294,109 @@ export async function buildArtificialAgentPins(qid, agentName, { con } = {}) {
      ? datePartToYear(parseSparqlDate(row.inceptionDate.value))
      : null;
    return { pins, agentName: resolvedName, wikipediaUrl, locationResolved: (latitude !== 0 || longitude !== 0), inceptionYear };
+}
+
+// ── Convex hull utility ───────────────────────────────────────────────────────
+// Gift-wrapping (Jarvis march) algorithm.
+// Input:  array of { lat, lng } objects
+// Output: array of [lat, lng] pairs forming the hull boundary, or null if < 3 points.
+export function computeConvexHull(latLngPoints) {
+  const pts = latLngPoints.filter(p => p != null && isFinite(p.lat) && isFinite(p.lng));
+  if (pts.length < 3) return null;
+
+  const cross = (O, A, B) =>
+    (A.lng - O.lng) * (B.lat - O.lat) - (A.lat - O.lat) * (B.lng - O.lng);
+
+  // Start from the leftmost point
+  let startIdx = 0;
+  for (let i = 1; i < pts.length; i++) {
+    if (pts[i].lng < pts[startIdx].lng) startIdx = i;
+  }
+
+  const hull = [];
+  let current = startIdx;
+  let safety  = 0;
+
+  do {
+    hull.push([pts[current].lat, pts[current].lng]);
+    let next = (current + 1) % pts.length;
+    for (let i = 0; i < pts.length; i++) {
+      if (cross(pts[current], pts[next], pts[i]) < 0) next = i;
+    }
+    current = next;
+    safety++;
+  } while (current !== startIdx && safety <= pts.length + 2);
+
+  return hull.length >= 3 ? hull : null;
+}
+
+// ── Phenomena spread pins ─────────────────────────────────────────────────────
+// Queries for sub-events and affected locations of a phenomenon.
+// Casts a wide net: parts of, located at, facets of.
+// Returns { pins, phenomenonName, wikipediaUrl }.
+export async function buildPhenomenaSpreadPins(qid, phenomenonName, { con } = {}) {
+  con?.log(`[wikidata] fetching phenomena spread for ${qid} (${phenomenonName})…`);
+
+  const sparql = `SELECT ?subEvent ?subEventLabel ?coords ?pointInTime ?startDate WHERE {`
+    + ` { ?subEvent wdt:P361  wd:${qid} . ?subEvent wdt:P625 ?coords . }`
+    + ` UNION { wd:${qid} wdt:P276 ?subEvent . ?subEvent wdt:P625 ?coords . }`
+    + ` UNION { ?subEvent wdt:P276  wd:${qid} . ?subEvent wdt:P625 ?coords . }`
+    + ` UNION { ?subEvent wdt:P1269 wd:${qid} . ?subEvent wdt:P625 ?coords . }`
+    + ` OPTIONAL { ?subEvent wdt:P585 ?pointInTime }`
+    + ` OPTIONAL { ?subEvent wdt:P580 ?startDate }`
+    + ` SERVICE wikibase:label { bd:serviceParam wikibase:language "[AUTO_LANGUAGE],en" }`
+    + ` } LIMIT 40`;
+
+  const parseYear = (isoString) => {
+    if (!isoString) return null;
+    const match = isoString.match(/^(-?\d+)/);
+    return match ? parseInt(match[1], 10) : null;
+  };
+
+  try {
+    const endpointUrl = `https://query.wikidata.org/sparql?query=${encodeURIComponent(sparql)}&format=json`;
+    con?.log(`[wikidata] buildPhenomenaSpreadPins URL length: ${endpointUrl.length}`);
+    const response = await fetch(endpointUrl, { headers: { Accept: 'application/sparql-results+json' } });
+    if (!response.ok) throw new Error(`SPARQL ${response.status}: ${response.statusText}`);
+    const data = await response.json();
+    const rows = data.results?.bindings || [];
+    con?.log(`[wikidata] buildPhenomenaSpreadPins: ${rows.length} row(s) for ${phenomenonName}`);
+
+    const wikipediaUrl = await resolveWikipediaUrl(qid, { con });
+
+    const pins = [];
+    for (const row of rows) {
+      const subEventLabel = row.subEventLabel?.value || row.subEvent?.value || '';
+      const rawCoords     = row.coords?.value        || '';
+      if (!rawCoords) continue;
+
+      const coordParts = rawCoords.replace('Point(', '').replace(')', '').split(' ');
+      const longitude  = parseFloat(coordParts[0]);
+      const latitude   = parseFloat(coordParts[1]);
+      if (isNaN(latitude) || isNaN(longitude)) continue;
+
+      const rawPoint  = row.pointInTime?.value || null;
+      const rawStart  = row.startDate?.value   || null;
+      const year      = parseYear(rawPoint) || parseYear(rawStart) || null;
+
+      pins.push({
+        title:        `${phenomenonName} — ${subEventLabel}`,
+        description:  `Part of ${phenomenonName}: ${subEventLabel}.`,
+        year:         year || new Date().getFullYear(),
+        date:         { start: rawPoint || rawStart || null, end: null },
+        latitude,
+        longitude,
+        category:     'phenomena',
+        significance: 'national',
+        source:       'Wikidata SPARQL',
+        wikipedia_url: wikipediaUrl || null,
+      });
+    }
+
+    con?.log(`[wikidata] buildPhenomenaSpreadPins: ${pins.length} mappable pin(s) for ${phenomenonName}`);
+    return { pins, phenomenonName, wikipediaUrl };
+  } catch (err) {
+    con?.warn(`[wikidata] buildPhenomenaSpreadPins failed for ${qid}: ${err.message}`);
+    return { pins: [], phenomenonName, wikipediaUrl: null };
+  }
 }

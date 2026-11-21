@@ -58,7 +58,7 @@ export default function ArtificialAgentsSearch({ onSearch, onConceptSearch, onPr
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
               <Bot className="w-5 h-5 text-sky-600" />
-              <h3 className="font-bold text-lg text-gray-900 dark:text-gray-100">Artificial Agents</h3>
+              <h3 className="font-bold text-lg text-gray-900 dark:text-gray-100">Search Artificial Agents</h3>
             </div>
             <div className="flex items-center gap-2">
               <Grab className="w-4 h-4 text-gray-400" />

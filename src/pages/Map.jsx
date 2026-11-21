@@ -31,6 +31,7 @@ import SessionPanel from '../components/session/SessionPanel';
 import QueryResultsViewer from '../components/ui/QueryResultsViewer';
 import OrganisationSearch from '../components/layers/OrganisationSearch';
 import LivingEntitiesSearch from '../components/layers/LivingEntitiesSearch';
+import PhenomenaSearch from '../components/layers/PhenomenaSearch';
 import ProfileViewer from '../components/ui/ProfileViewer';
 import ImageViewer from '../components/ui/ImageViewer';
 
@@ -353,6 +354,17 @@ function MapPageInner() {
   </DraggablePanel>
 )}
 
+ {openPanels.includes('phenomena') && activeLayers.includes('phenomena') && (
+  <DraggablePanel initialPosition={{ x: 24, y: 300 }} dragHandleClassName="drag-handle">
+    <PhenomenaSearch
+      onSearch={handlers.handlePhenomenaSearch}
+      onSpread={handlers.handlePhenomenaSpread}
+      isSearching={isSearching}
+      onClose={() => setOpenPanels(prev => prev.filter(id => id !== 'phenomena'))}
+    />
+  </DraggablePanel>
+)}
+
 
         {openPanels.includes('artificialAgents') && activeLayers.includes('artificialAgents') && (
   <DraggablePanel initialPosition={{ x: 24, y: 350 }} dragHandleClassName="drag-handle">
@@ -482,7 +494,7 @@ function MapPageInner() {
 })}
 
 {/* Polygon overlays — living entities species range */}
-            {activeLayers.includes('livingEntities') && polygons.map(poly => {
+            {polygons.filter(poly => activeLayers.includes(poly.layer || 'livingEntities')).map(poly => {
               const anchor = getPolygonAnchorPoint(poly.geojson);
               return (
                 <React.Fragment key={poly.id}>

@@ -15,6 +15,7 @@ import {
   resolvedToPin,
   resolveWikipediaUrl,
   buildPeopleSearchPins,
+  fetchPersonEventPins,
   buildEventPins,
   buildOrgSearchPins,
   fetchEntityProfile,
@@ -22,6 +23,8 @@ import {
   PERSON_PROFILE_PROPS,
   buildLivingEntityPins,
   LIVING_ENTITY_PROFILE_PROPS,
+  buildPhenomenaSpreadPins,
+  computeConvexHull,
   buildArtificialAgentPins,
   ARTIFICIAL_AGENT_PROFILE_PROPS,
   resolveDeepLocationPins,
@@ -323,7 +326,7 @@ const handleImportData = useCallback(async () => {
     con?.log(`[layout] switched to ${mode}`);
   }, [setLayoutMode, con]);
 
-  // ── Wikidata searches ─────────────────────────────────────────────────────
+  // ── Wikidata 'people' searches ─────────────────────────────────────────────────────
 
   const handleSparqlSearch = useCallback(async (searchTerm) => {
   if (!searchTerm.trim()) return;
@@ -339,13 +342,19 @@ const handleImportData = useCallback(async () => {
     const qid = searchData.search?.[0]?.id;
     if (!qid) { con?.warn(`Could not find "${searchTerm}" on Wikidata`); setIsSearching(false); return; }
 
-    // Step 2 — build raw pins via pure library function
-    const { pins, personName } = await buildPeopleSearchPins(qid, searchTerm, { con });
+        // Step 2 — build raw pins via pure library function
+    const { pins, personName, wikipediaUrl } = await buildPeopleSearchPins(qid, searchTerm, { con });
     if (!pins.length) { con?.warn(`[sparql] no relevant events found for "${searchTerm}"`); setIsSearching(false); return; }
+
+    // Step 2b — enrich with life-event pins (positions, employers, education, residences)
+    const birthPin  = pins.find(p => p.title.includes('Birth'));
+    const birthYear = birthPin?.year || null;
+    const eventPins = await fetchPersonEventPins(qid, personName, birthYear, wikipediaUrl, { con });
+    const allPins   = [...pins, ...eventPins];
 
     // Step 3 — assign group and IDs, commit to state
     const { groupId, groupColor } = resolveGroupForSearch(searchTerm.trim(), groups);
-    const withIds = pins.map((e, i) => ({
+    const withIds = allPins.map((e, i) => ({
       ...e,
       id:           `sparql_${groupId}_${i}`,
       search_group: groupId,
@@ -911,6 +920,194 @@ const handlePinNote = useCallback((noteId, pinId) => {
     });
   }, [setProfileData, con]);
 
+        // ── Phenomena — single dated pin ──────────────────────────────────────────
+
+  const handlePhenomenaSearch = useCallback(async (qid, label) => {
+    if (!qid) return;
+    setIsSearching(true);
+    con?.log(`[phenomena] searching: ${label} (${qid})`);
+    try {
+      const eventData = await fetchEventData(qid, { con });
+      if (!eventData) {
+        con?.warn(`[phenomena] no data returned for "${label}"`);
+        setIsSearching(false);
+        return;
+      }
+
+      const { groupId, groupColor } = resolveGroupForSearch(label, groups);
+      const wikipediaUrl = await resolveWikipediaUrl(qid, { con });
+      const { lat, lng, locationLabel, startDate, endDate, pointInTime } = eventData;
+
+      const makePhenomenaPin = (dateRaw, titleSuffix, descSuffix) => {
+        if (!dateRaw) return null;
+        const datePart = parseSparqlDate(dateRaw);
+        const year     = datePartToYear(datePart);
+        if (!year) return null;
+        return {
+          title:        titleSuffix ? `${label} — ${titleSuffix}` : label,
+          description:  `${label}${descSuffix}${locationLabel ? ` at ${locationLabel}` : ''}.`,
+          year,
+          date:         { start: datePart, end: null },
+          latitude:     lat  ?? 0,
+          longitude:    lng  ?? 0,
+          category:     'phenomena',
+          significance: 'global',
+          source:       'Wikidata SPARQL',
+          wikipedia_url: wikipediaUrl || '',
+        };
+      };
+
+      const rawPins = [];
+      if (pointInTime && !startDate && !endDate) {
+        const p = makePhenomenaPin(pointInTime, null, '');
+        if (p) rawPins.push(p);
+      } else {
+        const pStart = makePhenomenaPin(startDate, 'Start', ' — Start');
+        if (pStart) rawPins.push(pStart);
+        const pEnd = makePhenomenaPin(endDate, 'End', ' — End');
+        if (pEnd) rawPins.push(pEnd);
+      }
+
+          // Fallback: if we have coords but couldn't resolve any date, still place the pin
+    if (rawPins.length === 0 && lat != null && lng != null) {
+      rawPins.push({
+        title:        label,
+        description:  `${label}${locationLabel ? ` at ${locationLabel}` : ''}. (Date could not be determined — please verify.)`,
+        year:         new Date().getFullYear(),
+        date:         { start: null, end: null },
+        latitude:     lat,
+        longitude:    lng,
+        category:     'phenomena',
+        significance: 'global',
+        source:       'Wikidata SPARQL',
+        wikipedia_url: wikipediaUrl || '',
+      });
+      con?.warn(`[phenomena] no date found for "${label}" — pin placed with current year as placeholder; correct it via pin editor`);
+    }
+
+      const withIds = rawPins.map((p, i) => ({
+        ...p,
+        id:           `phenom_${groupId}_${i}`,
+        search_group: groupId,
+        search_color: groupColor,
+        search_query: label,
+      }));
+
+      if (withIds.length > 0) {
+        setEvents(prev => [...prev, ...withIds]);
+        setGroups(prev =>
+          prev.find(g => g.id === groupId)
+            ? prev
+            : [...prev, { id: groupId, name: label, color: groupColor }]
+        );
+        con?.success(`[phenomena] added ${withIds.length} pin(s) for "${label}"`);
+      } else {
+        con?.warn(`[phenomena] no location or date found for  "${label}" — try Custom Query`);
+      }
+    } catch (err) {
+      con?.error(`[phenomena] search failed: ${err.message}`);
+    }
+    setIsSearching(false);
+  }, [setEvents, setGroups, setIsSearching, groups, con]);
+
+  // ── Phenomena — spread (point cloud + convex hull polygon) ────────────────
+
+  const handlePhenomenaSpread = useCallback(async (qid, label) => {
+    if (!qid) return;
+    setIsSearching(true);
+    con?.log(`[phenomena] spread: "${label}" (${qid})`);
+    try {
+      // Get sub-event pins and the main phenomenon location in parallel
+      const [spreadResult, eventData] = await Promise.all([
+        buildPhenomenaSpreadPins(qid, label, { con }),
+        fetchEventData(qid, { con }),
+      ]);
+
+      const { pins: spreadPins, phenomenonName, wikipediaUrl } = spreadResult;
+      const { groupId, groupColor } = resolveGroupForSearch(label, groups);
+      const allPins = [...spreadPins];
+
+      // Prepend anchor pin if the main phenomenon has coordinates
+      if (eventData?.lat != null && eventData?.lng != null) {
+        const anchorRaw    = eventData.pointInTime || eventData.startDate;
+        const anchorPart   = anchorRaw ? parseSparqlDate(anchorRaw) : null;
+        const anchorYear   = anchorPart ? datePartToYear(anchorPart) : new Date().getFullYear();
+        allPins.unshift({
+          title:        `${phenomenonName || label}`,
+          description:  `${phenomenonName || label}${eventData.locationLabel ? ` at ${eventData.locationLabel}` : ''}.`,
+          year:         anchorYear,
+          date:         { start: anchorPart, end: null },
+          latitude:     eventData.lat,
+          longitude:    eventData.lng,
+          category:     'phenomena',
+          significance: 'global',
+          source:       'Wikidata SPARQL',
+          wikipedia_url: wikipediaUrl || '',
+        });
+      }
+
+      if (!allPins.length) {
+        con?.warn(`[phenomena] no spread data found for "${label}"`);
+        setIsSearching(false);
+        return;
+      }
+
+      // Stamp group fields and IDs
+      const withIds = allPins.map((p, i) => ({
+        ...p,
+        id:           `phenom_${groupId}_${Date.now()}_${i}`,
+        search_group: groupId,
+        search_color: groupColor,
+        search_query: label,
+      }));
+
+      setEvents(prev => [...prev, ...withIds]);
+      setGroups(prev =>
+        prev.find(g => g.id === groupId)
+          ? prev
+          : [...prev, { id: groupId, name: phenomenonName || label, color: groupColor }]
+      );
+      con?.success(`[phenomena] added ${withIds.length} pin(s) for "${label}"`);
+
+      // Compute convex hull polygon from the pin locations
+      const latLngPoints = withIds
+        .filter(p => p.latitude !== 0 || p.longitude !== 0)
+        .map(p => ({ lat: p.latitude, lng: p.longitude }));
+
+      const hull = computeConvexHull(latLngPoints);
+
+      if (hull) {
+        const hullGeoJson = {
+          type: 'FeatureCollection',
+          features: [{
+            type: 'Feature',
+            geometry: {
+              type: 'Polygon',
+              coordinates: [
+                [...hull.map(([lat, lng]) => [lng, lat]), [hull[0][1], hull[0][0]]],
+              ],
+            },
+            properties: { name: label },
+          }],
+        };
+        setPolygons(prev => [...prev, {
+          id:     `phenom_${qid}_${Date.now()}`,
+          label,
+          geojson: hullGeoJson,
+          color:   groupColor,
+          source:  'phenomena',
+          layer:   'phenomena',
+        }]);
+        con?.success(`[phenomena] convex hull polygon added (${hull.length} vertices)`);
+      } else {
+        con?.warn(`[phenomena] not enough distinct points for a hull polygon (need ≥ 3)`);
+      }
+    } catch (err) {
+      con?.error(`[phenomena] spread failed: ${err.message}`);
+    }
+    setIsSearching(false);
+  }, [setEvents, setGroups, setPolygons, setIsSearching, groups, con]);
+
   // ── Return all handlers ───────────────────────────────────────────────────
   return {
     handleToggleVisible,
@@ -944,6 +1141,8 @@ const handlePinNote = useCallback((noteId, pinId) => {
     handleSpeciesRange,
     handleLivingEntityProfile,
     handleRemovePolygon,
+    handlePhenomenaSearch,
+    handlePhenomenaSpread,
     handleArtificialAgentSearch,
     handleArtificialAgentConceptSearch,
     handleArtificialAgentProfile,
